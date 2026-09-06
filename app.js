@@ -242,6 +242,10 @@ async function deleteRemoteJob(jobId) {
 
 async function deleteRemoteTask(task) {
   if (!currentSession || !task?.id || task.id.startsWith('task-') || task.id.startsWith('calendar-')) return;
+  if (googleCalendarConnected) {
+    await calendarFunction({ action: 'delete_task', task: { id: task.id, calendar_event_id: task.calendarEventId } });
+    return;
+  }
   const { error } = await supabase.from('focus_tasks').delete().eq('id', task.id);
   if (error) throw error;
   await supabase.from('focus_calendar_events').delete().eq('task_id', task.id);
@@ -304,7 +308,9 @@ $('#taskForm').onsubmit = async (event) => {
     state.tasks.push(task); save(); event.target.reset(); closeModal('taskModal'); render();
     if (currentSession && googleCalendarConnected) {
       try {
-        await calendarFunction({ action: 'push_task', task: { id: task.id, title: task.title, due: task.due, duration: task.duration } });
+        const calendarResult = await calendarFunction({ action: 'push_task', task: { id: task.id, title: task.title, due: task.due, duration: task.duration } });
+        task.calendarEventId = calendarResult.event_id;
+        await supabase.from('focus_tasks').update({ calendar_event_id: calendarResult.event_id }).eq('id', task.id);
       } catch (calendarError) {
         console.error(calendarError);
         $('#calendarMessage').textContent = 'تم حفظ المهمة، لكن تعذرت إضافتها إلى Google Calendar.';
@@ -368,7 +374,7 @@ async function syncRemote() {
   }
   const remoteJobsById = new Map(remoteJobs.map((job) => [job.id, job]));
   state.jobs = remoteJobs.map((job) => ({ id: job.id, name: job.name, salary: Number(job.monthly_salary), priority: Number(job.priority || 1), color: job.color }));
-  state.tasks = (remoteTasks || []).map((task) => ({ id: task.id, jobId: task.job_id, title: task.title, duration: task.duration_minutes, due: task.due_at, importance: Number(task.importance), status: task.status, startedAt: task.started_at, completedAt: task.completed_at })).filter((task) => remoteJobsById.has(task.jobId));
+  state.tasks = (remoteTasks || []).map((task) => ({ id: task.id, jobId: task.job_id, title: task.title, duration: task.duration_minutes, due: task.due_at, importance: Number(task.importance), status: task.status, startedAt: task.started_at, completedAt: task.completed_at, calendarEventId: task.calendar_event_id })).filter((task) => remoteJobsById.has(task.jobId));
   state.breaks = (remoteBreaks || []).map((item) => ({ id: item.id, type: item.break_type, minutes: item.planned_minutes, startedAt: item.started_at, endedAt: item.ended_at }));
   state.sessions = (remoteSessions || []).filter((item) => item.ended_at && item.actual_minutes).map((item) => ({ id: item.id, taskId: item.task_id, startedAt: item.started_at, endedAt: item.ended_at, plannedMinutes: item.planned_minutes, actualMinutes: item.actual_minutes, outcome: item.outcome }));
   save();
