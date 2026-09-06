@@ -20,6 +20,7 @@ state.breaks = state.breaks || [];
 state.sessions = state.sessions || [];
 let currentSession = null;
 let googleCalendarConnected = false;
+let authReady = false;
 let activeSession = JSON.parse(localStorage.getItem('focuspilot-active-session') || 'null');
 const $ = (selector) => document.querySelector(selector);
 const save = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -286,6 +287,7 @@ render();
 function updateAccountButton() {
   $('#loginTop').textContent = currentSession ? 'تسجيل الخروج' : 'تسجيل الدخول';
   document.body.classList.toggle('authenticated', Boolean(currentSession));
+  document.body.classList.toggle('auth-ready', authReady);
 }
 
 async function seedRemoteData() {
@@ -372,34 +374,39 @@ async function syncGoogleCalendar({ announce = true } = {}) {
 }
 
 async function refreshSession() {
-  const { data } = await supabase.auth.getSession();
-  currentSession = data.session;
-  updateAccountButton();
-  if (currentSession) {
-    try { await syncRemote(); } catch (error) { console.error(error); }
-    const { data: connection } = await supabase.from('focus_calendar_connections').select('user_id').maybeSingle();
-    googleCalendarConnected = Boolean(connection);
-    if (sessionStorage.getItem('focuspilot-google-link-pending')) {
-      sessionStorage.removeItem('focuspilot-google-link-pending');
-      const { data: identities } = await supabase.auth.getUserIdentities();
-      const linked = identities?.identities?.some((identity) => identity.provider === 'google');
-      if (linked) {
-        openModal('calendarModal');
-        const refreshToken = currentSession.provider_refresh_token;
-        if (!refreshToken) {
-          $('#calendarMessage').textContent = 'تم ربط Google، لكن لم يصل رمز المزامنة. أعد الربط مع تفعيل الموافقة مرة أخرى.';
-        } else {
-          try {
-            await calendarFunction({ action: 'connect', refresh_token: refreshToken, calendar_id: 'primary' });
-            googleCalendarConnected = true;
-            await syncGoogleCalendar();
-          } catch (error) {
-            console.error(error);
-            $('#calendarMessage').textContent = error.message || 'تم الربط لكن تعذرت تهيئة المزامنة.';
+  try {
+    const { data } = await supabase.auth.getSession();
+    currentSession = data.session;
+    updateAccountButton();
+    if (currentSession) {
+      try { await syncRemote(); } catch (error) { console.error(error); }
+      const { data: connection } = await supabase.from('focus_calendar_connections').select('user_id').maybeSingle();
+      googleCalendarConnected = Boolean(connection);
+      if (sessionStorage.getItem('focuspilot-google-link-pending')) {
+        sessionStorage.removeItem('focuspilot-google-link-pending');
+        const { data: identities } = await supabase.auth.getUserIdentities();
+        const linked = identities?.identities?.some((identity) => identity.provider === 'google');
+        if (linked) {
+          openModal('calendarModal');
+          const refreshToken = currentSession.provider_refresh_token;
+          if (!refreshToken) {
+            $('#calendarMessage').textContent = 'تم ربط Google، لكن لم يصل رمز المزامنة. أعد الربط مع تفعيل الموافقة مرة أخرى.';
+          } else {
+            try {
+              await calendarFunction({ action: 'connect', refresh_token: refreshToken, calendar_id: 'primary' });
+              googleCalendarConnected = true;
+              await syncGoogleCalendar();
+            } catch (error) {
+              console.error(error);
+              $('#calendarMessage').textContent = error.message || 'تم الربط لكن تعذرت تهيئة المزامنة.';
+            }
           }
         }
       }
     }
+  } finally {
+    authReady = true;
+    updateAccountButton();
   }
 }
 
@@ -439,5 +446,11 @@ $('#googleConnect').onclick = () => { void connectGoogleCalendar(); };
 $('#googleSync').onclick = () => { void syncGoogleCalendar(); };
 $('#analyticsPeriod').onchange = () => renderAnalytics();
 $('#icsInput').onchange = (event) => { if (event.target.files[0]) void importIcs(event.target.files[0]); };
-supabase.auth.onAuthStateChange((_event, session) => { currentSession = session; updateAccountButton(); if (session) void syncRemote(); });
+supabase.auth.onAuthStateChange((_event, session) => {
+  if (session || authReady) {
+    currentSession = session;
+    updateAccountButton();
+    if (session) void syncRemote();
+  }
+});
 void refreshSession();

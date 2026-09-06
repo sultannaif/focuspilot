@@ -5,6 +5,8 @@ button,input,select { font:inherit; } button { cursor:pointer; border:0; }
 .auth-gate { min-height:100vh; display:none; place-items:center; align-content:center; gap:12px; padding:28px; text-align:center; background:radial-gradient(circle at 50% 15%,#fffefa 0,#f7f6f1 55%); }
 body:not(.authenticated) .auth-gate { display:grid; }
 body:not(.authenticated) .shell { display:none; }
+body:not(.auth-ready) .auth-gate { visibility:hidden; }
+body:not(.auth-ready) .shell { display:none; }
 .auth-gate-mark { width:48px; height:48px; display:grid; place-items:center; margin-bottom:8px; border-radius:14px; background:var(--ink); color:#fff; font:700 24px 'Space Grotesk',sans-serif; }
 .auth-gate h1 { margin:0; font-size:30px; letter-spacing:-.05em; }
 .auth-gate p { max-width:390px; margin:0 0 8px; color:var(--muted); font-size:13px; line-height:1.9; }
