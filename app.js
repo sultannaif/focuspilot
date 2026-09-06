@@ -321,12 +321,36 @@ async function signUp() {
   message.textContent = error ? error.message : 'تم إنشاء الحساب. تحقق من بريدك الإلكتروني ثم سجل الدخول.';
 }
 
+async function connectGoogleCalendar() {
+  if (!currentSession) { openModal('authModal'); return; }
+  $('#calendarMessage').textContent = 'سيتم فتح Google للموافقة على قراءة وكتابة أحداث التقويم...';
+  sessionStorage.setItem('focuspilot-google-link-pending', '1');
+  const { error } = await supabase.auth.linkIdentity({
+    provider: 'google',
+    options: {
+      redirectTo: window.location.origin,
+      scopes: 'https://www.googleapis.com/auth/calendar.events',
+      queryParams: { access_type: 'offline', prompt: 'consent' }
+    }
+  });
+  if (error) {
+    sessionStorage.removeItem('focuspilot-google-link-pending');
+    $('#calendarMessage').textContent = error.message;
+  }
+}
+
 async function refreshSession() {
   const { data } = await supabase.auth.getSession();
   currentSession = data.session;
   updateAccountButton();
   if (currentSession) {
     try { await syncRemote(); } catch (error) { console.error(error); }
+    if (sessionStorage.getItem('focuspilot-google-link-pending')) {
+      sessionStorage.removeItem('focuspilot-google-link-pending');
+      const { data: identities } = await supabase.auth.getUserIdentities();
+      const linked = identities?.identities?.some((identity) => identity.provider === 'google');
+      if (linked) { openModal('calendarModal'); $('#calendarMessage').textContent = 'تم ربط Google Calendar. سنبدأ الآن بإضافة المزامنة.'; }
+    }
   }
 }
 
@@ -362,6 +386,7 @@ $('#gateLogin').onclick = () => openModal('authModal');
 $('#loginTop').onclick = async () => { if (currentSession) { await supabase.auth.signOut(); currentSession = null; updateAccountButton(); return; } openModal('authModal'); };
 $('#calendarTop').onclick = () => openModal('calendarModal');
 $('#breakTop').onclick = () => openModal('breakModal');
+$('#googleConnect').onclick = () => { void connectGoogleCalendar(); };
 $('#analyticsPeriod').onchange = () => renderAnalytics();
 $('#icsInput').onchange = (event) => { if (event.target.files[0]) void importIcs(event.target.files[0]); };
 supabase.auth.onAuthStateChange((_event, session) => { currentSession = session; updateAccountButton(); if (session) void syncRemote(); });
