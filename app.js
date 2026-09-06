@@ -17,6 +17,9 @@ const demo = {
 };
 let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || demo;
 state.breaks = state.breaks || [];
+state.sessions = state.sessions || [];
+let currentSession = null;
+let activeSession = JSON.parse(localStorage.getItem('focuspilot-active-session') || 'null');
 const $ = (selector) => document.querySelector(selector);
 const save = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 const jobById = (id) => state.jobs.find((job) => job.id === id);
@@ -50,10 +53,12 @@ function render() {
   const today = new Date().toDateString();
   const todayBreaks = state.breaks.filter((item) => new Date(item.startedAt).toDateString() === today);
   $('#breaksList').innerHTML = todayBreaks.length ? todayBreaks.map((item) => `<div class="break-item"><strong>${breakLabels[item.type] || 'فترة خارج العمل'}</strong><span>${item.minutes} دقيقة · ${new Date(item.startedAt).toLocaleTimeString('ar-SA', { hour: 'numeric', minute: '2-digit' })}</span></div>`).join('') : '<div class="break-empty">لم تسجل أي راحة أو مشوار اليوم.</div>';
+  renderAnalytics();
 }
 function taskCard(task) {
   const job = jobById(task.jobId) || { name: 'غير مصنف', color: '#94a3b8' };
-  return `<article class="task-card ${task.status === 'done' ? 'done' : ''} ${orderedTasks()[0]?.id === task.id ? 'is-focus' : ''}"><div class="task-rank" style="color:${job.color}">${task.status === 'done' ? '✓' : priorityScore(task)}</div><div><div class="task-name">${task.title}</div><div class="task-meta"><span style="color:${job.color}">${job.name}</span> · ${minutes(task.duration)} · التسليم ${new Date(task.due).toLocaleString('ar-SA', { hour: 'numeric', minute: '2-digit' })}</div></div><div class="task-buttons">${task.status === 'done' ? '<span class="task-score">مكتملة</span>' : `<button class="small-button" data-action="done" data-id="${task.id}">أنجزتها</button><button class="small-button secondary" data-action="start" data-id="${task.id}">ابدأ</button>`}</div></article>`;
+  const active = activeSession?.taskId === task.id;
+  return `<article class="task-card ${task.status === 'done' ? 'done' : ''} ${orderedTasks()[0]?.id === task.id ? 'is-focus' : ''}"><div class="task-rank" style="color:${job.color}">${task.status === 'done' ? '✓' : priorityScore(task)}</div><div><div class="task-name">${task.title}</div><div class="task-meta"><span style="color:${job.color}">${job.name}</span> · ${minutes(task.duration)} · التسليم ${new Date(task.due).toLocaleString('ar-SA', { hour: 'numeric', minute: '2-digit' })}</div></div><div class="task-buttons">${task.status === 'done' ? '<span class="task-score">مكتملة</span>' : `<button class="small-button" data-action="done" data-id="${task.id}">أنجزتها</button><button class="small-button secondary" data-action="start" data-id="${task.id}">${active ? 'إيقاف المؤقت' : 'ابدأ'}</button>`}</div></article>`;
 }
 function openModal(id) { $(`#${id}`).classList.remove('hidden'); }
 function closeModal(id) { $(`#${id}`).classList.add('hidden'); }
@@ -62,10 +67,80 @@ function showError(error) {
   window.alert('تعذر حفظ التغيير. تأكد من اتصالك ثم حاول مرة أخرى.');
 }
 
+function periodStart(period) {
+  const start = new Date();
+  if (period === 'week') start.setDate(start.getDate() - 6);
+  if (period === 'month') start.setDate(start.getDate() - 29);
+  start.setHours(0, 0, 0, 0);
+  return start;
+}
+
+function analyticsFor(period = $('#analyticsPeriod')?.value || 'day') {
+  const start = periodStart(period);
+  const tasks = state.tasks.filter((task) => new Date(task.due) >= start);
+  const completed = tasks.filter((task) => task.status === 'done');
+  const onTime = completed.filter((task) => task.completedAt && new Date(task.completedAt) <= new Date(task.due));
+  const sessions = state.sessions.filter((item) => new Date(item.startedAt) >= start && item.actualMinutes > 0);
+  const breaks = state.breaks.filter((item) => new Date(item.startedAt) >= start);
+  const weight = (task) => (task.importance || 1) * (1 + Math.min(1, (jobById(task.jobId)?.salary || 0) / 6500));
+  const totalWeight = tasks.reduce((sum, task) => sum + weight(task), 0) || 1;
+  const completedWeight = completed.reduce((sum, task) => sum + weight(task), 0);
+  const completion = Math.round((completedWeight / totalWeight) * 100);
+  const punctuality = completed.length ? Math.round((onTime.length / completed.length) * 100) : 0;
+  const focusedMinutes = sessions.reduce((sum, item) => sum + item.actualMinutes, 0);
+  const breakMinutes = breaks.reduce((sum, item) => sum + item.minutes, 0);
+  const targetMinutes = period === 'day' ? 480 : period === 'week' ? 3360 : 14400;
+  const focusRate = Math.min(100, Math.round((focusedMinutes / Math.max(1, targetMinutes - breakMinutes)) * 100));
+  const wastedMinutes = Math.max(0, targetMinutes - breakMinutes - focusedMinutes);
+  const score = Math.round(completion * .5 + punctuality * .25 + focusRate * .2 + (completed.length ? 5 : 0));
+  return { score, completion, punctuality, focusedMinutes, breakMinutes, wastedMinutes, completed: completed.length };
+}
+
+function renderAnalytics() {
+  const data = analyticsFor();
+  $('#analyticsCards').innerHTML = [
+    ['النقاط', `${data.score}/100`, 'الالتزام العام'],
+    ['الإنجاز', `${data.completion}%`, `${data.completed} مهام مكتملة`],
+    ['التركيز', minutes(data.focusedMinutes), `${data.focusRate}% من الوقت المستهدف`],
+    ['الوقت غير المفسر', minutes(data.wastedMinutes), `بعد خصم ${minutes(data.breakMinutes)} راحة ومشاوير`]
+  ].map(([title, value, hint]) => `<article class="analytics-card"><span>${title}</span><strong>${value}</strong><span>${hint}</span></article>`).join('');
+}
+
 async function updateRemoteTask(task, changes) {
   if (!currentSession || !task?.id || task.id.startsWith('task-') || task.id.startsWith('calendar-')) return;
   const { error } = await supabase.from('focus_tasks').update(changes).eq('id', task.id);
   if (error) throw error;
+}
+
+async function startSession(task) {
+  if (activeSession) {
+    if (activeSession.taskId === task.id) return stopSession(task, 'interrupted');
+    throw new Error('هناك مؤقت يعمل لمهمة أخرى');
+  }
+  const startedAt = new Date().toISOString();
+  const session = { taskId: task.id, startedAt, plannedMinutes: task.duration, actualMinutes: 0, outcome: null };
+  if (currentSession && task.id && !task.id.startsWith('task-')) {
+    const { data, error } = await supabase.from('focus_sessions').insert({ task_id: task.id, started_at: startedAt, planned_minutes: task.duration }).select().single();
+    if (error) throw error;
+    session.id = data.id;
+  }
+  activeSession = session;
+  localStorage.setItem('focuspilot-active-session', JSON.stringify(activeSession));
+  task.status = 'in_progress'; task.startedAt = startedAt;
+  await updateRemoteTask(task, { status: 'in_progress', started_at: startedAt });
+}
+
+async function stopSession(task, outcome = 'interrupted') {
+  if (!activeSession || activeSession.taskId !== task.id) return;
+  const endedAt = new Date().toISOString();
+  const actualMinutes = Math.max(1, Math.round((new Date(endedAt) - new Date(activeSession.startedAt)) / 60000));
+  if (currentSession && activeSession.id) {
+    const { error } = await supabase.from('focus_sessions').update({ ended_at: endedAt, actual_minutes: actualMinutes, outcome }).eq('id', activeSession.id);
+    if (error) throw error;
+  }
+  state.sessions.push({ id: activeSession.id || `session-${Date.now()}`, taskId: task.id, startedAt: activeSession.startedAt, endedAt, plannedMinutes: activeSession.plannedMinutes, actualMinutes, outcome });
+  activeSession = null;
+  localStorage.removeItem('focuspilot-active-session');
 }
 
 async function deleteRemoteJob(jobId) {
@@ -84,14 +159,13 @@ document.addEventListener('click', async (event) => {
     const task = state.tasks.find((item) => item.id === action.dataset.id);
     try {
       if (action.dataset.action === 'done' && task) {
+        if (activeSession?.taskId === task.id) await stopSession(task, 'completed');
         const completedAt = new Date().toISOString();
         await updateRemoteTask(task, { status: 'done', completed_at: completedAt });
         task.status = 'done'; task.completedAt = completedAt;
       }
       if (action.dataset.action === 'start' && task) {
-        const startedAt = task.startedAt || new Date().toISOString();
-        await updateRemoteTask(task, { status: 'in_progress', started_at: startedAt });
-        task.startedAt = startedAt; task.status = 'in_progress';
+        await startSession(task);
       }
       if (action.dataset.action === 'skip' && task) {
         const due = new Date(Date.now() + 864e5).toISOString();
@@ -150,8 +224,6 @@ $('#breakForm').onsubmit = async (event) => {
 };
 render();
 
-let currentSession = null;
-
 function updateAccountButton() {
   $('#loginTop').textContent = currentSession ? 'تسجيل الخروج' : 'تسجيل الدخول';
   document.body.classList.toggle('authenticated', Boolean(currentSession));
@@ -169,12 +241,13 @@ async function seedRemoteData() {
 
 async function syncRemote() {
   if (!currentSession) return;
-  const [{ data: remoteJobs, error: jobsError }, { data: remoteTasks, error: tasksError }, { data: remoteBreaks, error: breaksError }] = await Promise.all([
+  const [{ data: remoteJobs, error: jobsError }, { data: remoteTasks, error: tasksError }, { data: remoteBreaks, error: breaksError }, { data: remoteSessions, error: sessionsError }] = await Promise.all([
     supabase.from('focus_jobs').select('*').order('created_at'),
     supabase.from('focus_tasks').select('*').order('due_at'),
-    supabase.from('focus_breaks').select('*').order('started_at', { ascending: false })
+    supabase.from('focus_breaks').select('*').order('started_at', { ascending: false }),
+    supabase.from('focus_sessions').select('*').order('started_at', { ascending: false })
   ]);
-  if (jobsError || tasksError || breaksError) throw jobsError || tasksError || breaksError;
+  if (jobsError || tasksError || breaksError || sessionsError) throw jobsError || tasksError || breaksError || sessionsError;
   if (!remoteJobs?.length) {
     await seedRemoteData();
     return syncRemote();
@@ -183,6 +256,7 @@ async function syncRemote() {
   state.jobs = remoteJobs.map((job) => ({ id: job.id, name: job.name, salary: Number(job.monthly_salary), color: job.color }));
   state.tasks = (remoteTasks || []).map((task) => ({ id: task.id, jobId: task.job_id, title: task.title, duration: task.duration_minutes, due: task.due_at, importance: Number(task.importance), status: task.status, startedAt: task.started_at, completedAt: task.completed_at })).filter((task) => remoteJobsById.has(task.jobId));
   state.breaks = (remoteBreaks || []).map((item) => ({ id: item.id, type: item.break_type, minutes: item.planned_minutes, startedAt: item.started_at, endedAt: item.ended_at }));
+  state.sessions = (remoteSessions || []).filter((item) => item.ended_at && item.actual_minutes).map((item) => ({ id: item.id, taskId: item.task_id, startedAt: item.started_at, endedAt: item.ended_at, plannedMinutes: item.planned_minutes, actualMinutes: item.actual_minutes, outcome: item.outcome }));
   save();
   render();
 }
@@ -246,6 +320,7 @@ $('#gateLogin').onclick = () => openModal('authModal');
 $('#loginTop').onclick = async () => { if (currentSession) { await supabase.auth.signOut(); currentSession = null; updateAccountButton(); return; } openModal('authModal'); };
 $('#calendarTop').onclick = () => openModal('calendarModal');
 $('#breakTop').onclick = () => openModal('breakModal');
+$('#analyticsPeriod').onchange = () => renderAnalytics();
 $('#icsInput').onchange = (event) => { if (event.target.files[0]) void importIcs(event.target.files[0]); };
 supabase.auth.onAuthStateChange((_event, session) => { currentSession = session; updateAccountButton(); if (session) void syncRemote(); });
 void refreshSession();

@@ -27,6 +27,7 @@
           <button class="nav-item active" data-view="today"><span>◷</span> يومي الآن</button>
           <button class="nav-item" data-view="tasks"><span>✓</span> المهام</button>
           <button class="nav-item" data-view="jobs"><span>◈</span> الوظائف</button>
+          <button class="nav-item" data-view="analytics"><span>↗</span> التحليلات</button>
         </nav>
         <div class="sidebar-note">
           <span class="note-dot"></span>
@@ -61,6 +62,7 @@
 
         <section id="tasksView" class="view hidden"><div class="section-heading"><div><span class="eyebrow">كل ما عليك</span><h2>المهام</h2></div><button class="primary-button" id="addTaskList">+ إضافة مهمة</button></div><div id="allTasks" class="task-queue"></div></section>
         <section id="jobsView" class="view hidden"><div class="section-heading"><div><span class="eyebrow">مصادر الالتزام</span><h2>الوظائف</h2></div><button class="primary-button" id="addJob">+ إضافة وظيفة</button></div><div id="jobsGrid" class="jobs-grid"></div></section>
+        <section id="analyticsView" class="view hidden"><div class="section-heading"><div><span class="eyebrow">صورة صادقة عن يومك</span><h2>النقاط والتحليلات</h2></div><select id="analyticsPeriod" class="period-select"><option value="day">اليوم</option><option value="week">هذا الأسبوع</option><option value="month">هذا الشهر</option></select></div><div id="analyticsCards" class="analytics-cards"></div><div class="analytics-panel"><span class="eyebrow">كيف حسبناها؟</span><p>النقاط تقيس الإنجاز في موعده، الالتزام ببدء المهام، وقت التركيز المسجل، ودقة تقدير مدة المهمة. الراحة والقيادة ومشاوير الأهل وقت محسوب وليست وقتًا ضائعًا.</p></div></section>
       </main>
     </div>
 
