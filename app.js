@@ -16,6 +16,7 @@ const demo = {
   ]
 };
 let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || demo;
+state.breaks = state.breaks || [];
 const $ = (selector) => document.querySelector(selector);
 const save = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 const jobById = (id) => state.jobs.find((job) => job.id === id);
@@ -45,6 +46,10 @@ function render() {
   $('#allTasks').innerHTML = state.tasks.map(taskCard).join('');
   $('#jobsGrid').innerHTML = state.jobs.map((job) => `<article class="job-card" style="border-top-color:${job.color}"><div class="job-name">${job.name}</div><div class="job-salary">${money(job.salary)} <small>ريال / شهريًا</small></div><div class="job-stats">${state.tasks.filter((task) => task.jobId === job.id && task.status !== 'done').length} مهام مفتوحة</div><button class="small-button secondary" data-action="delete-job" data-id="${job.id}">حذف الوظيفة</button></article>`).join('');
   $('#taskJobSelect').innerHTML = state.jobs.map((job) => `<option value="${job.id}">${job.name}</option>`).join('');
+  const breakLabels = { rest: 'راحة', driving: 'قيادة / مشوار', family: 'مشوار للأهل' };
+  const today = new Date().toDateString();
+  const todayBreaks = state.breaks.filter((item) => new Date(item.startedAt).toDateString() === today);
+  $('#breaksList').innerHTML = todayBreaks.length ? todayBreaks.map((item) => `<div class="break-item"><strong>${breakLabels[item.type] || 'فترة خارج العمل'}</strong><span>${item.minutes} دقيقة · ${new Date(item.startedAt).toLocaleTimeString('ar-SA', { hour: 'numeric', minute: '2-digit' })}</span></div>`).join('') : '<div class="break-empty">لم تسجل أي راحة أو مشوار اليوم.</div>';
 }
 function taskCard(task) {
   const job = jobById(task.jobId) || { name: 'غير مصنف', color: '#94a3b8' };
@@ -133,6 +138,16 @@ $('#jobForm').onsubmit = async (event) => {
     state.jobs.push(job); save(); event.target.reset(); closeModal('jobModal'); render();
   } catch (error) { showError(error); }
 };
+$('#breakForm').onsubmit = async (event) => {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  const item = { type: form.get('type'), minutes: Number(form.get('minutes')), startedAt: new Date().toISOString(), endedAt: null };
+  try {
+    const { data, error } = await supabase.from('focus_breaks').insert({ break_type: item.type, planned_minutes: item.minutes, started_at: item.startedAt }).select().single();
+    if (error) throw error;
+    item.id = data.id; state.breaks.unshift(item); save(); event.target.reset(); closeModal('breakModal'); render();
+  } catch (error) { showError(error); }
+};
 render();
 
 let currentSession = null;
@@ -154,11 +169,12 @@ async function seedRemoteData() {
 
 async function syncRemote() {
   if (!currentSession) return;
-  const [{ data: remoteJobs, error: jobsError }, { data: remoteTasks, error: tasksError }] = await Promise.all([
+  const [{ data: remoteJobs, error: jobsError }, { data: remoteTasks, error: tasksError }, { data: remoteBreaks, error: breaksError }] = await Promise.all([
     supabase.from('focus_jobs').select('*').order('created_at'),
-    supabase.from('focus_tasks').select('*').order('due_at')
+    supabase.from('focus_tasks').select('*').order('due_at'),
+    supabase.from('focus_breaks').select('*').order('started_at', { ascending: false })
   ]);
-  if (jobsError || tasksError) throw jobsError || tasksError;
+  if (jobsError || tasksError || breaksError) throw jobsError || tasksError || breaksError;
   if (!remoteJobs?.length) {
     await seedRemoteData();
     return syncRemote();
@@ -166,6 +182,7 @@ async function syncRemote() {
   const remoteJobsById = new Map(remoteJobs.map((job) => [job.id, job]));
   state.jobs = remoteJobs.map((job) => ({ id: job.id, name: job.name, salary: Number(job.monthly_salary), color: job.color }));
   state.tasks = (remoteTasks || []).map((task) => ({ id: task.id, jobId: task.job_id, title: task.title, duration: task.duration_minutes, due: task.due_at, importance: Number(task.importance), status: task.status, startedAt: task.started_at, completedAt: task.completed_at })).filter((task) => remoteJobsById.has(task.jobId));
+  state.breaks = (remoteBreaks || []).map((item) => ({ id: item.id, type: item.break_type, minutes: item.planned_minutes, startedAt: item.started_at, endedAt: item.ended_at }));
   save();
   render();
 }
@@ -228,6 +245,7 @@ $('#signupButton').onclick = () => { void signUp(); };
 $('#gateLogin').onclick = () => openModal('authModal');
 $('#loginTop').onclick = async () => { if (currentSession) { await supabase.auth.signOut(); currentSession = null; updateAccountButton(); return; } openModal('authModal'); };
 $('#calendarTop').onclick = () => openModal('calendarModal');
+$('#breakTop').onclick = () => openModal('breakModal');
 $('#icsInput').onchange = (event) => { if (event.target.files[0]) void importIcs(event.target.files[0]); };
 supabase.auth.onAuthStateChange((_event, session) => { currentSession = session; updateAccountButton(); if (session) void syncRemote(); });
 void refreshSession();

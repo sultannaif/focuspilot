@@ -37,7 +37,7 @@
       <main class="content">
         <header class="topbar">
           <div><span class="eyebrow">الأحد، ٦ سبتمبر ٢٠٢٦</span><h1>ركز على الشيء الذي يغيّر يومك</h1></div>
-          <div class="top-actions"><button class="ghost-button" id="calendarTop">ربط التقويم</button><button class="ghost-button" id="loginTop">تسجيل الدخول</button><button class="primary-button" id="addTaskTop">+ مهمة جديدة</button></div>
+          <div class="top-actions"><button class="ghost-button" id="calendarTop">ربط التقويم</button><button class="ghost-button" id="breakTop">راحة / مشوار</button><button class="ghost-button" id="loginTop">تسجيل الدخول</button><button class="primary-button" id="addTaskTop">+ مهمة جديدة</button></div>
         </header>
 
         <section id="todayView" class="view">
@@ -56,6 +56,7 @@
 
           <div class="section-heading"><div><span class="eyebrow">الترتيب الذكي</span><h2>ما الذي يستحق وقتك الآن؟</h2></div><span class="availability">الوقت المتاح اليوم: ٤:٠٠ م - ١٢:٠٠ ص</span></div>
           <div id="queue" class="task-queue"></div>
+          <div class="break-log"><div class="section-heading"><div><span class="eyebrow">وقت محسوب</span><h2>الراحة والمشاوير</h2></div></div><div id="breaksList" class="breaks-list"></div></div>
         </section>
 
         <section id="tasksView" class="view hidden"><div class="section-heading"><div><span class="eyebrow">كل ما عليك</span><h2>المهام</h2></div><button class="primary-button" id="addTaskList">+ إضافة مهمة</button></div><div id="allTasks" class="task-queue"></div></section>
@@ -66,6 +67,7 @@
     <div id="taskModal" class="modal hidden"><div class="modal-panel"><button class="modal-close" data-close="taskModal">×</button><span class="eyebrow">إضافة إلى قائمة التنفيذ</span><h2>مهمة جديدة</h2><form id="taskForm"><label>اسم المهمة<input name="title" required placeholder="مثال: تجهيز تقرير الحملة" /></label><label>الوظيفة<select name="jobId" id="taskJobSelect" required></select></label><div class="form-grid"><label>المدة بالدقائق<input name="duration" type="number" min="10" value="60" required /></label><label>الموعد النهائي<input name="due" type="datetime-local" required /></label></div><label>أهمية المهمة<select name="importance"><option value="1">عادية</option><option value="1.25">مهمة</option><option value="1.5">حرجة</option></select></label><button class="primary-button full" type="submit">أضفها للترتيب الذكي</button></form></div></div>
     <div id="jobModal" class="modal hidden"><div class="modal-panel"><button class="modal-close" data-close="jobModal">×</button><span class="eyebrow">مصدر جديد</span><h2>إضافة وظيفة</h2><form id="jobForm"><label>اسم الوظيفة<input name="name" required placeholder="مثال: تسويق شركة جديدة" /></label><label>الراتب الشهري<input name="salary" type="number" min="0" required placeholder="6500" /></label><label>لون التعريف<input name="color" type="color" value="#f97316" /></label><button class="primary-button full" type="submit">حفظ الوظيفة</button></form></div></div>
     <div id="authModal" class="modal hidden"><div class="modal-panel"><button class="modal-close" data-close="authModal">×</button><span class="eyebrow">بياناتك محفوظة معك</span><h2>تسجيل الدخول</h2><form id="authForm"><label>البريد الإلكتروني<input name="email" type="email" required placeholder="you@example.com" /></label><label>كلمة المرور<input name="password" type="password" minlength="6" required /></label><div class="form-grid"><button class="primary-button" type="submit" data-auth-mode="signin">دخول</button><button class="small-button" type="button" id="signupButton">إنشاء حساب</button></div><p id="authMessage" class="form-message"></p></form></div></div>
+    <div id="breakModal" class="modal hidden"><div class="modal-panel"><button class="modal-close" data-close="breakModal">×</button><span class="eyebrow">ليس وقتًا ضائعًا</span><h2>تسجيل راحة أو مشوار</h2><form id="breakForm"><label>نوع الفترة<select name="type"><option value="rest">راحة</option><option value="driving">قيادة / مشوار</option><option value="family">مشوار للأهل</option></select></label><label>المدة بالدقائق<input name="minutes" type="number" min="5" max="1440" value="30" required /></label><button class="primary-button full" type="submit">حفظ الفترة</button><p id="breakMessage" class="form-message"></p></form></div></div>
     <div id="calendarModal" class="modal hidden"><div class="modal-panel"><button class="modal-close" data-close="calendarModal">×</button><span class="eyebrow">الخطوة التالية</span><h2>Google Calendar</h2><p class="modal-copy">نجهز المزامنة لقراءة أحداث تقويمك وتحويلها إلى مهام. الربط المباشر يحتاج إعداد OAuth من Google، ويمكنك الآن استيراد ملف تقويم بصيغة ICS.</p><label class="file-import">استيراد ملف Google Calendar (.ics)<input id="icsInput" type="file" accept=".ics,text/calendar" /></label><p id="calendarMessage" class="form-message"></p></div></div>
     <script type="module" src="app.js"></script>
   </body>
