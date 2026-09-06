@@ -52,19 +52,87 @@ function taskCard(task) {
 }
 function openModal(id) { $(`#${id}`).classList.remove('hidden'); }
 function closeModal(id) { $(`#${id}`).classList.add('hidden'); }
-document.addEventListener('click', (event) => {
+function showError(error) {
+  console.error(error);
+  window.alert('تعذر حفظ التغيير. تأكد من اتصالك ثم حاول مرة أخرى.');
+}
+
+async function updateRemoteTask(task, changes) {
+  if (!currentSession || !task?.id || task.id.startsWith('task-') || task.id.startsWith('calendar-')) return;
+  const { error } = await supabase.from('focus_tasks').update(changes).eq('id', task.id);
+  if (error) throw error;
+}
+
+async function deleteRemoteJob(jobId) {
+  if (!currentSession || jobId.startsWith('job-')) return;
+  const { error: tasksError } = await supabase.from('focus_tasks').delete().eq('job_id', jobId);
+  if (tasksError) throw tasksError;
+  const { error: jobError } = await supabase.from('focus_jobs').delete().eq('id', jobId);
+  if (jobError) throw jobError;
+}
+
+document.addEventListener('click', async (event) => {
   const nav = event.target.closest('[data-view]');
   if (nav) { document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item === nav)); document.querySelectorAll('.view').forEach((view) => view.classList.add('hidden')); $(`#${nav.dataset.view}View`).classList.remove('hidden'); }
   const action = event.target.closest('[data-action]');
-  if (action) { const task = state.tasks.find((item) => item.id === action.dataset.id); if (action.dataset.action === 'done' && task) task.status = 'done'; if (action.dataset.action === 'start' && task) task.startedAt = task.startedAt || new Date().toISOString(); if (action.dataset.action === 'skip' && task) task.due = new Date(Date.now() + 864e5).toISOString(); if (action.dataset.action === 'delete-job') state.jobs = state.jobs.filter((job) => job.id !== action.dataset.id); save(); render(); }
+  if (action) {
+    const task = state.tasks.find((item) => item.id === action.dataset.id);
+    try {
+      if (action.dataset.action === 'done' && task) {
+        const completedAt = new Date().toISOString();
+        await updateRemoteTask(task, { status: 'done', completed_at: completedAt });
+        task.status = 'done'; task.completedAt = completedAt;
+      }
+      if (action.dataset.action === 'start' && task) {
+        const startedAt = task.startedAt || new Date().toISOString();
+        await updateRemoteTask(task, { status: 'in_progress', started_at: startedAt });
+        task.startedAt = startedAt; task.status = 'in_progress';
+      }
+      if (action.dataset.action === 'skip' && task) {
+        const due = new Date(Date.now() + 864e5).toISOString();
+        await updateRemoteTask(task, { status: 'skipped', due_at: due });
+        task.due = due; task.status = 'skipped';
+      }
+      if (action.dataset.action === 'delete-job') {
+        await deleteRemoteJob(action.dataset.id);
+        state.jobs = state.jobs.filter((job) => job.id !== action.dataset.id);
+        state.tasks = state.tasks.filter((item) => item.jobId !== action.dataset.id);
+      }
+      save(); render();
+    } catch (error) { showError(error); }
+  }
   const closer = event.target.closest('[data-close]'); if (closer) closeModal(closer.dataset.close);
 });
 $('#addTaskTop').onclick = $('#addTaskList').onclick = () => openModal('taskModal');
 $('#addJob').onclick = () => openModal('jobModal');
 const resetDemo = $('#resetDemo');
 if (resetDemo) resetDemo.onclick = () => { state = JSON.parse(JSON.stringify(demo)); save(); render(); };
-$('#taskForm').onsubmit = (event) => { event.preventDefault(); const form = new FormData(event.target); state.tasks.push({ id: `task-${Date.now()}`, title: form.get('title'), jobId: form.get('jobId'), duration: Number(form.get('duration')), due: form.get('due'), importance: Number(form.get('importance')), status: 'pending', startedAt: null, completedAt: null }); save(); event.target.reset(); closeModal('taskModal'); render(); };
-$('#jobForm').onsubmit = (event) => { event.preventDefault(); const form = new FormData(event.target); state.jobs.push({ id: `job-${Date.now()}`, name: form.get('name'), salary: Number(form.get('salary')), color: form.get('color') }); save(); event.target.reset(); closeModal('jobModal'); render(); };
+$('#taskForm').onsubmit = async (event) => {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  const task = { title: form.get('title'), jobId: form.get('jobId'), duration: Number(form.get('duration')), due: form.get('due'), importance: Number(form.get('importance')), status: 'pending', startedAt: null, completedAt: null };
+  try {
+    if (currentSession) {
+      const { data, error } = await supabase.from('focus_tasks').insert({ job_id: task.jobId, title: task.title, duration_minutes: task.duration, due_at: task.due, importance: task.importance, status: task.status }).select().single();
+      if (error) throw error;
+      task.id = data.id;
+    } else task.id = `task-${Date.now()}`;
+    state.tasks.push(task); save(); event.target.reset(); closeModal('taskModal'); render();
+  } catch (error) { showError(error); }
+};
+$('#jobForm').onsubmit = async (event) => {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  const job = { name: form.get('name'), salary: Number(form.get('salary')), color: form.get('color') };
+  try {
+    if (currentSession) {
+      const { data, error } = await supabase.from('focus_jobs').insert({ name: job.name, monthly_salary: job.salary, color: job.color }).select().single();
+      if (error) throw error;
+      job.id = data.id;
+    } else job.id = `job-${Date.now()}`;
+    state.jobs.push(job); save(); event.target.reset(); closeModal('jobModal'); render();
+  } catch (error) { showError(error); }
+};
 render();
 
 let currentSession = null;
