@@ -95,7 +95,7 @@ function scheduleStartForToday() {
   return start;
 }
 
-async function rescheduleTodayTasks() {
+async function rescheduleTodayTasks({ forceCalendar = false } = {}) {
   if (!currentSession) return;
   const today = new Date().toDateString();
   const tasks = orderedTasks().filter((task) => new Date(task.due).toDateString() === today && task.status !== 'done' && task.source !== 'google_calendar');
@@ -108,15 +108,17 @@ async function rescheduleTodayTasks() {
     return { task, start: start.toISOString(), end: end.toISOString() };
   });
   const changed = updates.filter(({ task, start, end }) => task.scheduledStartAt !== start || task.scheduledEndAt !== end);
-  if (!changed.length) return;
+  if (!changed.length && !forceCalendar) return;
   for (const { task, start, end } of changed) {
     task.scheduledStartAt = start;
     task.scheduledEndAt = end;
   }
-  const scheduleResults = await Promise.all(changed.map(({ task, start, end }) => supabase.from('focus_tasks').update({ scheduled_start_at: start, scheduled_end_at: end }).eq('id', task.id)));
-  const scheduleError = scheduleResults.find((result) => result.error)?.error;
-  if (scheduleError) throw scheduleError;
-  if (googleCalendarConnected) await calendarFunction({ action: 'reschedule_tasks', tasks: changed.map(({ task, start, end }) => ({ id: task.id, start, end })) });
+  if (changed.length) {
+    const scheduleResults = await Promise.all(changed.map(({ task, start, end }) => supabase.from('focus_tasks').update({ scheduled_start_at: start, scheduled_end_at: end }).eq('id', task.id)));
+    const scheduleError = scheduleResults.find((result) => result.error)?.error;
+    if (scheduleError) throw scheduleError;
+  }
+  if (googleCalendarConnected) await calendarFunction({ action: 'reschedule_tasks', tasks: updates.map(({ task, start, end }) => ({ id: task.id, start, end })) });
   save();
   render();
 }
@@ -491,7 +493,7 @@ async function refreshSession() {
       try { await syncRemote(); } catch (error) { console.error(error); }
       const { data: connection } = await supabase.from('focus_calendar_connections').select('user_id').maybeSingle();
       googleCalendarConnected = Boolean(connection);
-      try { await rescheduleTodayTasks(); } catch (error) { console.error(error); }
+      try { await rescheduleTodayTasks({ forceCalendar: true }); } catch (error) { console.error(error); }
       if (sessionStorage.getItem('focuspilot-google-link-pending')) {
         sessionStorage.removeItem('focuspilot-google-link-pending');
         const { data: identities } = await supabase.auth.getUserIdentities();
