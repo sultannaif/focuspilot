@@ -60,7 +60,10 @@ function render() {
 function taskCard(task) {
   const job = jobById(task.jobId) || { name: 'غير مصنف', color: '#94a3b8' };
   const active = activeSession?.taskId === task.id;
-  return `<article class="task-card ${task.status === 'done' ? 'done' : ''} ${orderedTasks()[0]?.id === task.id ? 'is-focus' : ''}"><div class="task-rank" style="color:${job.color}">${task.status === 'done' ? '✓' : priorityScore(task)}</div><div><div class="task-name">${task.title}</div><div class="task-meta"><span style="color:${job.color}">${job.name}</span> · ${minutes(task.duration)} · التسليم ${new Date(task.due).toLocaleString('ar-SA', { hour: 'numeric', minute: '2-digit' })}</div></div><div class="task-buttons">${task.status === 'done' ? '<span class="task-score">مكتملة</span>' : `<button class="small-button" data-action="done" data-id="${task.id}">أنجزتها</button><button class="small-button secondary" data-action="start" data-id="${task.id}">${active ? 'إيقاف المؤقت' : 'ابدأ'}</button>`}</div></article>`;
+  const dueDate = new Date(task.due);
+  const time = dueDate.toLocaleTimeString('ar-SA', { hour: 'numeric', minute: '2-digit' });
+  const dueLabel = dueDate.toDateString() === new Date().toDateString() ? `اليوم ${time}` : `${dueDate.toLocaleDateString('ar-SA', { day: 'numeric', month: 'short' })} ${time}`;
+  return `<article class="task-card ${task.status === 'done' ? 'done' : ''} ${orderedTasks()[0]?.id === task.id ? 'is-focus' : ''}"><div class="task-rank" style="color:${job.color}">${task.status === 'done' ? '✓' : priorityScore(task)}</div><div><div class="task-name">${task.title}</div><div class="task-meta"><span style="color:${job.color}">${job.name}</span> · ${minutes(task.duration)} · التسليم ${dueLabel}</div></div><div class="task-buttons">${task.status === 'done' ? '<span class="task-score">مكتملة</span>' : `<button class="small-button" data-action="done" data-id="${task.id}">أنجزتها</button><button class="small-button secondary" data-action="start" data-id="${task.id}">${active ? 'إيقاف المؤقت' : 'ابدأ'}</button>`}</div></article>`;
 }
 function openModal(id) { $(`#${id}`).classList.remove('hidden'); }
 function closeModal(id) { $(`#${id}`).classList.add('hidden'); }
