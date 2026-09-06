@@ -79,7 +79,8 @@ function taskCard(task) {
   const dueDate = new Date(task.due);
   const time = dueDate.toLocaleTimeString('ar-SA', { hour: 'numeric', minute: '2-digit' });
   const dueLabel = dueDate.toDateString() === new Date().toDateString() ? `اليوم ${time}` : `${dueDate.toLocaleDateString('ar-SA', { day: 'numeric', month: 'short' })} ${time}`;
-  return `<article class="task-card ${task.status === 'done' ? 'done' : ''} ${orderedTasks()[0]?.id === task.id ? 'is-focus' : ''}"><div class="task-rank" style="color:${job.color}">${task.status === 'done' ? '✓' : priorityScore(task)}</div><div><div class="task-name">${task.title}</div><div class="task-meta"><span style="color:${job.color}">${job.name}</span> · ${minutes(task.duration)} · التسليم ${dueLabel}</div></div><div class="task-buttons">${task.status === 'done' ? '<span class="task-score">مكتملة</span>' : `<button class="small-button" data-action="done" data-id="${task.id}">أنجزتها</button><button class="small-button secondary" data-action="start" data-id="${task.id}">${active ? 'إيقاف المؤقت' : 'ابدأ'}</button>`}</div></article>`;
+  const taskActions = task.status === 'done' ? `<button class="small-button" data-action="undo-done" data-id="${task.id}">تراجع</button>` : `<button class="small-button" data-action="done" data-id="${task.id}">أنجزتها</button><button class="small-button secondary" data-action="start" data-id="${task.id}">${active ? 'إيقاف المؤقت' : 'ابدأ'}</button>`;
+  return `<article class="task-card ${task.status === 'done' ? 'done' : ''} ${orderedTasks()[0]?.id === task.id ? 'is-focus' : ''}"><div class="task-rank" style="color:${job.color}">${task.status === 'done' ? '✓' : priorityScore(task)}</div><div><div class="task-name">${task.title}</div><div class="task-meta"><span style="color:${job.color}">${job.name}</span> · ${minutes(task.duration)} · التسليم ${dueLabel}</div></div><div class="task-buttons">${task.status === 'done' ? '<span class="task-score">مكتملة</span>' : ''}${taskActions}<button class="small-button danger" data-action="delete-task" data-id="${task.id}">حذف</button></div></article>`;
 }
 function openModal(id) { $(`#${id}`).classList.remove('hidden'); }
 function closeModal(id) { $(`#${id}`).classList.add('hidden'); }
@@ -239,6 +240,13 @@ async function deleteRemoteJob(jobId) {
   if (jobError) throw jobError;
 }
 
+async function deleteRemoteTask(task) {
+  if (!currentSession || !task?.id || task.id.startsWith('task-') || task.id.startsWith('calendar-')) return;
+  const { error } = await supabase.from('focus_tasks').delete().eq('id', task.id);
+  if (error) throw error;
+  await supabase.from('focus_calendar_events').delete().eq('task_id', task.id);
+}
+
 document.addEventListener('click', async (event) => {
   const nav = event.target.closest('[data-view]');
   if (nav) { document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item === nav)); document.querySelectorAll('.view').forEach((view) => view.classList.add('hidden')); $(`#${nav.dataset.view}View`).classList.remove('hidden'); }
@@ -251,6 +259,15 @@ document.addEventListener('click', async (event) => {
         const completedAt = new Date().toISOString();
         await updateRemoteTask(task, { status: 'done', completed_at: completedAt });
         task.status = 'done'; task.completedAt = completedAt;
+      }
+      if (action.dataset.action === 'undo-done' && task) {
+        await updateRemoteTask(task, { status: 'pending', completed_at: null });
+        task.status = 'pending'; task.completedAt = null;
+      }
+      if (action.dataset.action === 'delete-task' && task) {
+        if (!window.confirm('حذف هذه المهمة نهائيًا؟')) return;
+        await deleteRemoteTask(task);
+        state.tasks = state.tasks.filter((item) => item.id !== task.id);
       }
       if (action.dataset.action === 'start' && task) {
         await startSession(task);
