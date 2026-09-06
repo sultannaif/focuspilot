@@ -90,21 +90,29 @@ async function calendarFunction(body) {
   return data;
 }
 
-function periodStart(period) {
+function periodRange(period) {
   const start = new Date();
-  if (period === 'week') start.setDate(start.getDate() - 6);
-  if (period === 'month') start.setDate(start.getDate() - 29);
   start.setHours(0, 0, 0, 0);
-  return start;
+  if (period === 'week') start.setDate(start.getDate() - start.getDay());
+  if (period === 'month') start.setDate(1);
+  const end = new Date(start);
+  if (period === 'day') end.setDate(end.getDate() + 1);
+  if (period === 'week') end.setDate(end.getDate() + 7);
+  if (period === 'month') end.setMonth(end.getMonth() + 1);
+  return { start, end };
 }
 
 function analyticsFor(period = $('#analyticsPeriod')?.value || 'day') {
-  const start = periodStart(period);
-  const tasks = state.tasks.filter((task) => new Date(task.due) >= start);
+  const { start, end } = periodRange(period);
+  const inRange = (value) => {
+    const date = new Date(value);
+    return date >= start && date < end;
+  };
+  const tasks = state.tasks.filter((task) => inRange(task.due));
   const completed = tasks.filter((task) => task.status === 'done');
   const onTime = completed.filter((task) => task.completedAt && new Date(task.completedAt) <= new Date(task.due));
-  const sessions = state.sessions.filter((item) => new Date(item.startedAt) >= start && item.actualMinutes > 0);
-  const breaks = state.breaks.filter((item) => new Date(item.startedAt) >= start);
+  const sessions = state.sessions.filter((item) => inRange(item.startedAt) && item.actualMinutes > 0);
+  const breaks = state.breaks.filter((item) => inRange(item.startedAt));
   const weight = (task) => (task.importance || 1) * (1 + Math.min(1, (jobById(task.jobId)?.salary || 0) / 6500));
   const totalWeight = tasks.reduce((sum, task) => sum + weight(task), 0) || 1;
   const completedWeight = completed.reduce((sum, task) => sum + weight(task), 0);
@@ -112,7 +120,7 @@ function analyticsFor(period = $('#analyticsPeriod')?.value || 'day') {
   const punctuality = completed.length ? Math.round((onTime.length / completed.length) * 100) : 0;
   const focusedMinutes = sessions.reduce((sum, item) => sum + item.actualMinutes, 0);
   const breakMinutes = breaks.reduce((sum, item) => sum + item.minutes, 0);
-  const targetMinutes = period === 'day' ? 480 : period === 'week' ? 3360 : 14400;
+  const targetMinutes = Math.round(((end - start) / 864e5) * 480);
   const focusRate = Math.min(100, Math.round((focusedMinutes / Math.max(1, targetMinutes - breakMinutes)) * 100));
   const wastedMinutes = Math.max(0, targetMinutes - breakMinutes - focusedMinutes);
   const score = Math.round(completion * .5 + punctuality * .25 + focusRate * .2 + (completed.length ? 5 : 0));
