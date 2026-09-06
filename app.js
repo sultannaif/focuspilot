@@ -71,6 +71,7 @@ let currentSession = null;
 
 function updateAccountButton() {
   $('#loginTop').textContent = currentSession ? 'تسجيل الخروج' : 'تسجيل الدخول';
+  document.body.classList.toggle('authenticated', Boolean(currentSession));
 }
 
 async function seedRemoteData() {
@@ -156,6 +157,7 @@ async function importIcs(file) {
 
 $('#authForm').onsubmit = (event) => { event.preventDefault(); void startAuth(); };
 $('#signupButton').onclick = () => { void signUp(); };
+$('#gateLogin').onclick = () => openModal('authModal');
 $('#loginTop').onclick = async () => { if (currentSession) { await supabase.auth.signOut(); currentSession = null; updateAccountButton(); return; } openModal('authModal'); };
 $('#calendarTop').onclick = () => openModal('calendarModal');
 $('#icsInput').onchange = (event) => { if (event.target.files[0]) void importIcs(event.target.files[0]); };
