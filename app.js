@@ -3,10 +3,10 @@ import { supabase } from './supabase-client.js';
 const STORAGE_KEY = 'focuspilot-demo-v1';
 const demo = {
   jobs: [
-    { id: 'job-1', name: 'التسويق الرئيسي', salary: 6500, color: '#f97316' },
-    { id: 'job-2', name: 'التطوير', salary: 3000, color: '#275dad' },
-    { id: 'job-3', name: 'التسويق الثاني', salary: 2000, color: '#159a70' },
-    { id: 'job-4', name: 'التسويق الثالث', salary: 1500, color: '#a855f7' }
+    { id: 'job-1', name: 'التسويق الرئيسي', salary: 6500, priority: 1, color: '#f97316' },
+    { id: 'job-2', name: 'التطوير', salary: 3000, priority: 1, color: '#275dad' },
+    { id: 'job-3', name: 'التسويق الثاني', salary: 2000, priority: 1, color: '#159a70' },
+    { id: 'job-4', name: 'التسويق الثالث', salary: 1500, priority: 1, color: '#a855f7' }
   ],
   tasks: [
     { id: 'task-1', jobId: 'job-1', title: 'تجهيز خطة محتوى الحملة القادمة', duration: 90, due: '2026-09-06T18:30', importance: 1.5, status: 'pending', startedAt: null, completedAt: null },
@@ -29,12 +29,13 @@ const money = (value) => new Intl.NumberFormat('ar-SA').format(value);
 const minutes = (value) => value >= 60 ? `${Math.floor(value / 60)}س ${value % 60 ? `${value % 60}د` : ''}` : `${value}د`;
 
 function priorityScore(task) {
-  const job = jobById(task.jobId) || { salary: 0 };
+  const job = jobById(task.jobId) || { salary: 0, priority: 1 };
   const hoursToDue = (new Date(task.due) - new Date()) / 36e5;
   const urgency = Math.max(0, Math.min(40, 24 / Math.max(1, hoursToDue + 2) * 4));
   const financial = Math.min(45, Math.log10(job.salary + 10) * 13);
   const effort = Math.max(0, 15 - task.duration / 10);
-  return Math.round((financial + urgency + effort) * (task.importance || 1));
+  const jobPriorityBonus = (Math.max(1, job.priority || 1) - 1) * 40;
+  return Math.round((financial + urgency + effort + jobPriorityBonus) * (task.importance || 1));
 }
 function orderedTasks() { return [...state.tasks].sort((a,b) => (a.status === 'done') - (b.status === 'done') || priorityScore(b) - priorityScore(a)); }
 
@@ -49,7 +50,7 @@ function render() {
   $('#scoreHint').textContent = completed ? `${completed} من ${state.tasks.length} مهام مكتملة. استمر على نفس الإيقاع.` : 'أكمل أول مهمة حتى يبدأ التقييم.';
   $('#queue').innerHTML = tasks.map(taskCard).join('');
   $('#allTasks').innerHTML = state.tasks.map(taskCard).join('');
-  $('#jobsGrid').innerHTML = state.jobs.map((job) => `<article class="job-card" style="border-top-color:${job.color}"><div class="job-name">${job.name}</div><div class="job-salary">${money(job.salary)} <small>ريال / شهريًا</small></div><div class="job-stats">${state.tasks.filter((task) => task.jobId === job.id && task.status !== 'done').length} مهام مفتوحة</div><button class="small-button secondary" data-action="delete-job" data-id="${job.id}">حذف الوظيفة</button></article>`).join('');
+  $('#jobsGrid').innerHTML = state.jobs.map((job) => `<article class="job-card" style="border-top-color:${job.color}"><div class="job-name">${job.name}</div><div class="job-salary">${money(job.salary)} <small>ريال / شهريًا</small></div><div class="job-stats">${state.tasks.filter((task) => task.jobId === job.id && task.status !== 'done').length} مهام مفتوحة · أولوية ${job.priority || 1}/5</div><button class="small-button secondary" data-action="delete-job" data-id="${job.id}">حذف الوظيفة</button></article>`).join('');
   $('#taskJobSelect').innerHTML = state.jobs.map((job) => `<option value="${job.id}">${job.name}</option>`).join('');
   const breakLabels = { rest: 'راحة', driving: 'قيادة / مشوار', family: 'مشوار للأهل' };
   const today = new Date().toDateString();
@@ -326,7 +327,7 @@ async function syncRemote() {
     return syncRemote();
   }
   const remoteJobsById = new Map(remoteJobs.map((job) => [job.id, job]));
-  state.jobs = remoteJobs.map((job) => ({ id: job.id, name: job.name, salary: Number(job.monthly_salary), color: job.color }));
+  state.jobs = remoteJobs.map((job) => ({ id: job.id, name: job.name, salary: Number(job.monthly_salary), priority: Number(job.priority || 1), color: job.color }));
   state.tasks = (remoteTasks || []).map((task) => ({ id: task.id, jobId: task.job_id, title: task.title, duration: task.duration_minutes, due: task.due_at, importance: Number(task.importance), status: task.status, startedAt: task.started_at, completedAt: task.completed_at })).filter((task) => remoteJobsById.has(task.jobId));
   state.breaks = (remoteBreaks || []).map((item) => ({ id: item.id, type: item.break_type, minutes: item.planned_minutes, startedAt: item.started_at, endedAt: item.ended_at }));
   state.sessions = (remoteSessions || []).filter((item) => item.ended_at && item.actual_minutes).map((item) => ({ id: item.id, taskId: item.task_id, startedAt: item.started_at, endedAt: item.ended_at, plannedMinutes: item.planned_minutes, actualMinutes: item.actual_minutes, outcome: item.outcome }));
