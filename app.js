@@ -19,6 +19,7 @@ let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || demo;
 state.breaks = state.breaks || [];
 state.sessions = state.sessions || [];
 let currentSession = null;
+let googleCalendarConnected = false;
 let activeSession = JSON.parse(localStorage.getItem('focuspilot-active-session') || 'null');
 const $ = (selector) => document.querySelector(selector);
 const save = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -65,6 +66,14 @@ function closeModal(id) { $(`#${id}`).classList.add('hidden'); }
 function showError(error) {
   console.error(error);
   window.alert('تعذر حفظ التغيير. تأكد من اتصالك ثم حاول مرة أخرى.');
+}
+
+async function calendarFunction(body) {
+  if (!currentSession) throw new Error('يجب تسجيل الدخول أولًا.');
+  const { data, error } = await supabase.functions.invoke('google-calendar-sync', { body });
+  if (error) throw error;
+  if (data?.ok === false) throw new Error(data.error || 'تعذرت مزامنة Google Calendar.');
+  return data;
 }
 
 function periodStart(period) {
@@ -239,6 +248,14 @@ $('#taskForm').onsubmit = async (event) => {
       task.id = data.id;
     } else task.id = `task-${Date.now()}`;
     state.tasks.push(task); save(); event.target.reset(); closeModal('taskModal'); render();
+    if (currentSession && googleCalendarConnected) {
+      try {
+        await calendarFunction({ action: 'push_task', task: { id: task.id, title: task.title, due: task.due, duration: task.duration } });
+      } catch (calendarError) {
+        console.error(calendarError);
+        $('#calendarMessage').textContent = 'تم حفظ المهمة، لكن تعذرت إضافتها إلى Google Calendar.';
+      }
+    }
   } catch (error) { showError(error); }
 };
 $('#jobForm').onsubmit = async (event) => {
@@ -339,17 +356,49 @@ async function connectGoogleCalendar() {
   }
 }
 
+async function syncGoogleCalendar({ announce = true } = {}) {
+  if (!currentSession) { openModal('authModal'); return; }
+  if (announce) $('#calendarMessage').textContent = 'جارٍ قراءة أحداث Google Calendar...';
+  try {
+    const result = await calendarFunction({ action: 'sync' });
+    googleCalendarConnected = true;
+    await syncRemote();
+    if (announce) $('#calendarMessage').textContent = `تمت المزامنة. تمت قراءة ${result.imported || 0} حدث جديد.`;
+  } catch (error) {
+    console.error(error);
+    googleCalendarConnected = false;
+    if (announce) $('#calendarMessage').textContent = error.message || 'تعذرت مزامنة Google Calendar.';
+  }
+}
+
 async function refreshSession() {
   const { data } = await supabase.auth.getSession();
   currentSession = data.session;
   updateAccountButton();
   if (currentSession) {
     try { await syncRemote(); } catch (error) { console.error(error); }
+    const { data: connection } = await supabase.from('focus_calendar_connections').select('user_id').maybeSingle();
+    googleCalendarConnected = Boolean(connection);
     if (sessionStorage.getItem('focuspilot-google-link-pending')) {
       sessionStorage.removeItem('focuspilot-google-link-pending');
       const { data: identities } = await supabase.auth.getUserIdentities();
       const linked = identities?.identities?.some((identity) => identity.provider === 'google');
-      if (linked) { openModal('calendarModal'); $('#calendarMessage').textContent = 'تم ربط Google Calendar. سنبدأ الآن بإضافة المزامنة.'; }
+      if (linked) {
+        openModal('calendarModal');
+        const refreshToken = currentSession.provider_refresh_token;
+        if (!refreshToken) {
+          $('#calendarMessage').textContent = 'تم ربط Google، لكن لم يصل رمز المزامنة. أعد الربط مع تفعيل الموافقة مرة أخرى.';
+        } else {
+          try {
+            await calendarFunction({ action: 'connect', refresh_token: refreshToken, calendar_id: 'primary' });
+            googleCalendarConnected = true;
+            await syncGoogleCalendar();
+          } catch (error) {
+            console.error(error);
+            $('#calendarMessage').textContent = error.message || 'تم الربط لكن تعذرت تهيئة المزامنة.';
+          }
+        }
+      }
     }
   }
 }
@@ -387,6 +436,7 @@ $('#loginTop').onclick = async () => { if (currentSession) { await supabase.auth
 $('#calendarTop').onclick = () => openModal('calendarModal');
 $('#breakTop').onclick = () => openModal('breakModal');
 $('#googleConnect').onclick = () => { void connectGoogleCalendar(); };
+$('#googleSync').onclick = () => { void syncGoogleCalendar(); };
 $('#analyticsPeriod').onchange = () => renderAnalytics();
 $('#icsInput').onchange = (event) => { if (event.target.files[0]) void importIcs(event.target.files[0]); };
 supabase.auth.onAuthStateChange((_event, session) => { currentSession = session; updateAccountButton(); if (session) void syncRemote(); });
