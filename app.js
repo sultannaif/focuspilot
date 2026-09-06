@@ -342,6 +342,16 @@ async function signUp() {
 
 async function connectGoogleCalendar() {
   if (!currentSession) { openModal('authModal'); return; }
+  $('#calendarMessage').textContent = 'نجهز تفويض Google للتقويم...';
+  const { data: identities } = await supabase.auth.getUserIdentities();
+  const googleIdentity = identities?.identities?.find((identity) => identity.provider === 'google');
+  if (googleIdentity) {
+    const { error: unlinkError } = await supabase.auth.unlinkIdentity(googleIdentity);
+    if (unlinkError) {
+      $('#calendarMessage').textContent = 'تعذر تجديد تفويض Google. تأكد أنك سجلت الدخول بالبريد وكلمة المرور ثم حاول مرة أخرى.';
+      return;
+    }
+  }
   $('#calendarMessage').textContent = 'سيتم فتح Google للموافقة على قراءة وكتابة أحداث التقويم...';
   sessionStorage.setItem('focuspilot-google-link-pending', '1');
   const { error } = await supabase.auth.linkIdentity({
