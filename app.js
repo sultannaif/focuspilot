@@ -124,7 +124,7 @@ function analyticsFor(period = $('#analyticsPeriod')?.value || 'day') {
   const focusRate = Math.min(100, Math.round((focusedMinutes / Math.max(1, targetMinutes - breakMinutes)) * 100));
   const wastedMinutes = Math.max(0, targetMinutes - breakMinutes - focusedMinutes);
   const score = Math.round(completion * .5 + punctuality * .25 + focusRate * .2 + (completed.length ? 5 : 0));
-  return { score, completion, punctuality, focusedMinutes, breakMinutes, wastedMinutes, completed: completed.length };
+  return { score, completion, punctuality, focusedMinutes, breakMinutes, wastedMinutes, completed: completed.length, total: tasks.length };
 }
 
 function chartDayKey(date) {
@@ -171,7 +171,7 @@ function renderAnalytics() {
   const data = analyticsFor();
   $('#analyticsCards').innerHTML = [
     ['النقاط', `${data.score}/100`, 'الالتزام العام'],
-    ['الإنجاز', `${data.completion}%`, `${data.completed} مهام مكتملة`],
+    ['الإنجاز', `${data.completed} من ${data.total}`, `${data.completion}% من مهام الفترة مكتملة`],
     ['التركيز', minutes(data.focusedMinutes), `${data.focusRate}% من الوقت المستهدف`],
     ['الوقت غير المفسر', minutes(data.wastedMinutes), `بعد خصم ${minutes(data.breakMinutes)} راحة ومشاوير`]
   ].map(([title, value, hint]) => `<article class="analytics-card"><span>${title}</span><strong>${value}</strong><span>${hint}</span></article>`).join('');
