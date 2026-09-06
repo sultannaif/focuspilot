@@ -21,6 +21,7 @@ state.sessions = state.sessions || [];
 let currentSession = null;
 let googleCalendarConnected = false;
 let authReady = false;
+let taskViewMode = 'list';
 let activeSession = JSON.parse(localStorage.getItem('focuspilot-active-session') || 'null');
 const $ = (selector) => document.querySelector(selector);
 const save = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -40,16 +41,19 @@ function priorityScore(task) {
 function orderedTasks() { return [...state.tasks].sort((a,b) => (a.status === 'done') - (b.status === 'done') || priorityScore(b) - priorityScore(a)); }
 
 function render() {
-  const tasks = orderedTasks();
+  const todayKey = new Date().toDateString();
+  const todayTasks = orderedTasks().filter((task) => new Date(task.due).toDateString() === todayKey);
+  const tasks = todayTasks;
   const focus = tasks.find((task) => task.status !== 'done');
-  $('#focusContent').innerHTML = focus ? `<h2 class="focus-title">${focus.title}</h2><div class="focus-meta">${jobById(focus.jobId)?.name || 'بدون وظيفة'} · ${minutes(focus.duration)} · درجة الأولوية ${priorityScore(focus)}</div><div class="focus-actions"><button class="primary-button" data-action="start" data-id="${focus.id}">${focus.startedAt ? 'استمر في المهمة' : 'ابدأ الآن'}</button><button class="small-button secondary" data-action="skip" data-id="${focus.id}">أجّلها بسبب واضح</button></div>` : '<h2 class="focus-title">أنجزت كل شيء مجدول اليوم</h2><div class="focus-meta">خذ راحتك أو أضف مهمة جديدة.</div>';
-  const completed = state.tasks.filter((task) => task.status === 'done').length;
-  const score = state.tasks.length ? Math.round((completed / state.tasks.length) * 100) : 0;
+  $('#focusContent').innerHTML = focus ? `<h2 class="focus-title">${focus.title}</h2><div class="focus-meta">${jobById(focus.jobId)?.name || 'بدون وظيفة'} · ${minutes(focus.duration)} · درجة الأولوية ${priorityScore(focus)}</div><div class="focus-actions"><button class="primary-button" data-action="start" data-id="${focus.id}">${focus.startedAt ? 'استمر في المهمة' : 'ابدأ الآن'}</button><button class="small-button secondary" data-action="skip" data-id="${focus.id}">أجّلها بسبب واضح</button></div>` : '<h2 class="focus-title">أنجزت كل شيء مجدول اليوم</h2><div class="focus-meta">لا توجد مهام أخرى لليوم. يمكنك مراجعة الأيام القادمة من تبويب المهام والتقويم.</div>';
+  const completed = todayTasks.filter((task) => task.status === 'done').length;
+  const score = todayTasks.length ? Math.round((completed / todayTasks.length) * 100) : 0;
   $('#scoreValue').textContent = score;
   $('#scoreBar').style.width = `${score}%`;
-  $('#scoreHint').textContent = completed ? `${completed} من ${state.tasks.length} مهام مكتملة. استمر على نفس الإيقاع.` : 'أكمل أول مهمة حتى يبدأ التقييم.';
+  $('#scoreHint').textContent = completed ? `${completed} من ${todayTasks.length} مهام اليوم مكتملة. استمر على نفس الإيقاع.` : todayTasks.length ? 'أكمل أول مهمة حتى يبدأ التقييم.' : 'لا توجد مهام مجدولة لليوم.';
   $('#queue').innerHTML = tasks.map(taskCard).join('');
   $('#allTasks').innerHTML = state.tasks.map(taskCard).join('');
+  renderTasksCalendar();
   $('#jobsGrid').innerHTML = state.jobs.map((job) => `<article class="job-card" style="border-top-color:${job.color}"><div class="job-name">${job.name}</div><div class="job-salary">${money(job.salary)} <small>ريال / شهريًا</small></div><div class="job-stats">${state.tasks.filter((task) => task.jobId === job.id && task.status !== 'done').length} مهام مفتوحة · أولوية ${job.priority || 1}/5</div><button class="small-button secondary" data-action="delete-job" data-id="${job.id}">حذف الوظيفة</button></article>`).join('');
   $('#taskJobSelect').innerHTML = state.jobs.map((job) => `<option value="${job.id}">${job.name}</option>`).join('');
   const breakLabels = { rest: 'راحة', driving: 'قيادة / مشوار', family: 'مشوار للأهل' };
@@ -57,6 +61,17 @@ function render() {
   const todayBreaks = state.breaks.filter((item) => new Date(item.startedAt).toDateString() === today);
   $('#breaksList').innerHTML = todayBreaks.length ? todayBreaks.map((item) => `<div class="break-item"><strong>${breakLabels[item.type] || 'فترة خارج العمل'}</strong><span>${item.minutes} دقيقة · ${new Date(item.startedAt).toLocaleTimeString('ar-SA', { hour: 'numeric', minute: '2-digit' })}</span></div>`).join('') : '<div class="break-empty">لم تسجل أي راحة أو مشوار اليوم.</div>';
   renderAnalytics();
+}
+
+function renderTasksCalendar() {
+  const grouped = new Map();
+  [...state.tasks].sort((a, b) => new Date(a.due) - new Date(b.due)).forEach((task) => {
+    const date = new Date(task.due);
+    const key = date.toDateString();
+    if (!grouped.has(key)) grouped.set(key, { date, tasks: [] });
+    grouped.get(key).tasks.push(task);
+  });
+  $('#tasksCalendar').innerHTML = grouped.size ? [...grouped.values()].map(({ date, tasks }) => `<section class="calendar-day"><div class="calendar-day-heading"><strong>${date.toLocaleDateString('ar-SA', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</strong><span>${tasks.length} مهام</span></div><div class="task-queue">${tasks.map(taskCard).join('')}</div></section>`).join('') : '<div class="chart-empty">لا توجد مهام في التقويم.</div>';
 }
 function taskCard(task) {
   const job = jobById(task.jobId) || { name: 'غير مصنف', color: '#94a3b8' };
@@ -475,6 +490,8 @@ $('#calendarTop').onclick = () => openModal('calendarModal');
 $('#breakTop').onclick = () => openModal('breakModal');
 $('#googleConnect').onclick = () => { void connectGoogleCalendar(); };
 $('#googleSync').onclick = () => { void syncGoogleCalendar(); };
+$('#taskModeList').onclick = () => { taskViewMode = 'list'; $('#allTasks').classList.remove('hidden'); $('#tasksCalendar').classList.add('hidden'); $('#taskModeList').classList.add('active'); $('#taskModeCalendar').classList.remove('active'); };
+$('#taskModeCalendar').onclick = () => { taskViewMode = 'calendar'; $('#allTasks').classList.add('hidden'); $('#tasksCalendar').classList.remove('hidden'); $('#taskModeCalendar').classList.add('active'); $('#taskModeList').classList.remove('active'); };
 $('#analyticsPeriod').onchange = () => renderAnalytics();
 $('#icsInput').onchange = (event) => { if (event.target.files[0]) void importIcs(event.target.files[0]); };
 supabase.auth.onAuthStateChange((_event, session) => {
