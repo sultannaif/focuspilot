@@ -96,6 +96,46 @@ function analyticsFor(period = $('#analyticsPeriod')?.value || 'day') {
   return { score, completion, punctuality, focusedMinutes, breakMinutes, wastedMinutes, completed: completed.length };
 }
 
+function chartDayKey(date) {
+  const day = new Date(date);
+  return `${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`;
+}
+
+function renderFocusChart() {
+  const days = Array.from({ length: 7 }, (_, index) => {
+    const day = new Date();
+    day.setHours(0, 0, 0, 0);
+    day.setDate(day.getDate() - (6 - index));
+    return day;
+  });
+  const values = days.map((day) => {
+    const key = chartDayKey(day);
+    const focus = state.sessions.filter((item) => chartDayKey(item.startedAt) === key).reduce((sum, item) => sum + Number(item.actualMinutes || 0), 0);
+    const breaks = state.breaks.filter((item) => chartDayKey(item.startedAt) === key).reduce((sum, item) => sum + Number(item.minutes || 0), 0);
+    return { focus: Math.min(480, focus), breaks: Math.min(480 - Math.min(480, focus), breaks) };
+  });
+  if (!values.some((item) => item.focus || item.breaks)) { $('#focusChart').innerHTML = '<div class="chart-empty">ابدأ مؤقت المهام حتى يظهر إيقاع وقتك هنا.</div>'; return; }
+  const width = 620, height = 220, baseline = 182, chartHeight = 145, max = 480;
+  const bars = values.map((item, index) => {
+    const x = 42 + index * 82;
+    const focusHeight = (item.focus / max) * chartHeight;
+    const breakHeight = (item.breaks / max) * chartHeight;
+    const label = days[index].toLocaleDateString('ar-SA', { weekday: 'short' }).replace('،', '');
+    return `<line class="chart-gridline" x1="32" y1="${baseline - chartHeight}" x2="604" y2="${baseline - chartHeight}"/><rect x="${x}" y="${baseline - focusHeight}" width="42" height="${focusHeight}" rx="5" fill="#52718a"/><rect x="${x}" y="${baseline - focusHeight - breakHeight}" width="42" height="${breakHeight}" rx="5" fill="#d5a65a"/><text class="chart-label" x="${x + 21}" y="205" text-anchor="middle">${label}</text>${item.focus ? `<text class="chart-value" x="${x + 21}" y="${baseline - focusHeight - breakHeight - 7}" text-anchor="middle">${item.focus}د</text>` : ''}`;
+  }).join('');
+  $('#focusChart').innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="رسم وقت التركيز والراحة">${bars}</svg>`;
+}
+
+function renderJobChart() {
+  const grouped = state.jobs.map((job) => {
+    const tasks = state.tasks.filter((task) => task.jobId === job.id);
+    const completed = tasks.filter((task) => task.status === 'done').length;
+    return { job, total: tasks.length, completed, ratio: tasks.length ? Math.round((completed / tasks.length) * 100) : 0 };
+  }).filter((item) => item.total);
+  if (!grouped.length) { $('#jobChart').innerHTML = '<div class="chart-empty">أضف مهامًا حتى يظهر الإنجاز حسب الوظيفة.</div>'; return; }
+  $('#jobChart').innerHTML = grouped.map(({ job, total, completed, ratio }) => `<div class="job-bar"><div class="job-bar-head"><strong>${job.name}</strong><span>${completed} من ${total} · ${ratio}%</span></div><div class="job-bar-track"><div class="job-bar-fill" style="width:${ratio}%;background:${job.color}"></div></div></div>`).join('');
+}
+
 function renderAnalytics() {
   const data = analyticsFor();
   $('#analyticsCards').innerHTML = [
@@ -104,6 +144,8 @@ function renderAnalytics() {
     ['التركيز', minutes(data.focusedMinutes), `${data.focusRate}% من الوقت المستهدف`],
     ['الوقت غير المفسر', minutes(data.wastedMinutes), `بعد خصم ${minutes(data.breakMinutes)} راحة ومشاوير`]
   ].map(([title, value, hint]) => `<article class="analytics-card"><span>${title}</span><strong>${value}</strong><span>${hint}</span></article>`).join('');
+  renderFocusChart();
+  renderJobChart();
 }
 
 async function updateRemoteTask(task, changes) {
