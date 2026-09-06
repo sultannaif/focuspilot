@@ -79,8 +79,46 @@ function taskCard(task) {
   const dueDate = new Date(task.due);
   const time = dueDate.toLocaleTimeString('ar-SA', { hour: 'numeric', minute: '2-digit' });
   const dueLabel = dueDate.toDateString() === new Date().toDateString() ? `اليوم ${time}` : `${dueDate.toLocaleDateString('ar-SA', { day: 'numeric', month: 'short' })} ${time}`;
+  const scheduleLabel = task.scheduledStartAt && task.scheduledEndAt ? ` · تنفيذ ${new Date(task.scheduledStartAt).toLocaleTimeString('ar-SA', { hour: 'numeric', minute: '2-digit' })}-${new Date(task.scheduledEndAt).toLocaleTimeString('ar-SA', { hour: 'numeric', minute: '2-digit' })}` : '';
   const taskActions = task.status === 'done' ? `<button class="small-button" data-action="undo-done" data-id="${task.id}">تراجع</button>` : `<button class="small-button" data-action="done" data-id="${task.id}">أنجزتها</button><button class="small-button secondary" data-action="start" data-id="${task.id}">${active ? 'إيقاف المؤقت' : 'ابدأ'}</button>`;
-  return `<article class="task-card ${task.status === 'done' ? 'done' : ''} ${orderedTasks()[0]?.id === task.id ? 'is-focus' : ''}"><div class="task-rank" style="color:${job.color}">${task.status === 'done' ? '✓' : priorityScore(task)}</div><div><div class="task-name">${task.title}</div><div class="task-meta"><span style="color:${job.color}">${job.name}</span> · ${minutes(task.duration)} · التسليم ${dueLabel}</div></div><div class="task-buttons">${task.status === 'done' ? '<span class="task-score">مكتملة</span>' : ''}${taskActions}<button class="small-button danger" data-action="delete-task" data-id="${task.id}">حذف</button></div></article>`;
+  return `<article class="task-card ${task.status === 'done' ? 'done' : ''} ${orderedTasks()[0]?.id === task.id ? 'is-focus' : ''}"><div class="task-rank" style="color:${job.color}">${task.status === 'done' ? '✓' : priorityScore(task)}</div><div><div class="task-name">${task.title}</div><div class="task-meta"><span style="color:${job.color}">${job.name}</span> · ${minutes(task.duration)} · التسليم ${dueLabel}${scheduleLabel}</div></div><div class="task-buttons">${task.status === 'done' ? '<span class="task-score">مكتملة</span>' : ''}${taskActions}<button class="small-button danger" data-action="delete-task" data-id="${task.id}">حذف</button></div></article>`;
+}
+
+function scheduleStartForToday() {
+  const start = new Date();
+  start.setHours(16, 0, 0, 0);
+  if (Date.now() > start.getTime()) {
+    const now = new Date(Date.now() + 5 * 60000);
+    now.setSeconds(0, 0);
+    start.setTime(Math.ceil(now.getTime() / 300000) * 300000);
+  }
+  return start;
+}
+
+async function rescheduleTodayTasks() {
+  if (!currentSession) return;
+  const today = new Date().toDateString();
+  const tasks = orderedTasks().filter((task) => new Date(task.due).toDateString() === today && task.status !== 'done' && task.source !== 'google_calendar');
+  if (!tasks.length) return;
+  let cursor = scheduleStartForToday();
+  const updates = tasks.map((task, index) => {
+    const start = new Date(cursor);
+    const end = new Date(start.getTime() + Number(task.duration || 30) * 60000);
+    cursor = new Date(end.getTime() + ((Number(task.duration || 30) > 30 || Number(tasks[index + 1]?.duration || 0) > 30) ? 5 : 0) * 60000);
+    return { task, start: start.toISOString(), end: end.toISOString() };
+  });
+  const changed = updates.filter(({ task, start, end }) => task.scheduledStartAt !== start || task.scheduledEndAt !== end);
+  if (!changed.length) return;
+  for (const { task, start, end } of changed) {
+    task.scheduledStartAt = start;
+    task.scheduledEndAt = end;
+  }
+  const scheduleResults = await Promise.all(changed.map(({ task, start, end }) => supabase.from('focus_tasks').update({ scheduled_start_at: start, scheduled_end_at: end }).eq('id', task.id)));
+  const scheduleError = scheduleResults.find((result) => result.error)?.error;
+  if (scheduleError) throw scheduleError;
+  if (googleCalendarConnected) await calendarFunction({ action: 'reschedule_tasks', tasks: changed.map(({ task, start, end }) => ({ id: task.id, start, end })) });
+  save();
+  render();
 }
 function openModal(id) { $(`#${id}`).classList.remove('hidden'); }
 function closeModal(id) { $(`#${id}`).classList.add('hidden'); }
@@ -286,6 +324,7 @@ document.addEventListener('click', async (event) => {
         state.jobs = state.jobs.filter((job) => job.id !== action.dataset.id);
         state.tasks = state.tasks.filter((item) => item.jobId !== action.dataset.id);
       }
+      await rescheduleTodayTasks();
       save(); render();
     } catch (error) { showError(error); }
   }
@@ -298,7 +337,7 @@ if (resetDemo) resetDemo.onclick = () => { state = JSON.parse(JSON.stringify(dem
 $('#taskForm').onsubmit = async (event) => {
   event.preventDefault();
   const form = new FormData(event.target);
-  const task = { title: form.get('title'), jobId: form.get('jobId'), duration: Number(form.get('duration')), due: form.get('due'), importance: Number(form.get('importance')), status: 'pending', startedAt: null, completedAt: null };
+  const task = { title: form.get('title'), jobId: form.get('jobId'), duration: Number(form.get('duration')), due: form.get('due'), importance: Number(form.get('importance')), status: 'pending', startedAt: null, completedAt: null, source: 'focuspilot' };
   try {
     if (currentSession) {
       const { data, error } = await supabase.from('focus_tasks').insert({ job_id: task.jobId, title: task.title, duration_minutes: task.duration, due_at: task.due, importance: task.importance, status: task.status }).select().single();
@@ -316,6 +355,7 @@ $('#taskForm').onsubmit = async (event) => {
         $('#calendarMessage').textContent = 'تم حفظ المهمة، لكن تعذرت إضافتها إلى Google Calendar.';
       }
     }
+    await rescheduleTodayTasks();
   } catch (error) { showError(error); }
 };
 $('#jobForm').onsubmit = async (event) => {
@@ -374,7 +414,7 @@ async function syncRemote() {
   }
   const remoteJobsById = new Map(remoteJobs.map((job) => [job.id, job]));
   state.jobs = remoteJobs.map((job) => ({ id: job.id, name: job.name, salary: Number(job.monthly_salary), priority: Number(job.priority || 1), color: job.color }));
-  state.tasks = (remoteTasks || []).map((task) => ({ id: task.id, jobId: task.job_id, title: task.title, duration: task.duration_minutes, due: task.due_at, importance: Number(task.importance), status: task.status, startedAt: task.started_at, completedAt: task.completed_at, calendarEventId: task.calendar_event_id })).filter((task) => remoteJobsById.has(task.jobId));
+  state.tasks = (remoteTasks || []).map((task) => ({ id: task.id, jobId: task.job_id, title: task.title, duration: task.duration_minutes, due: task.due_at, importance: Number(task.importance), status: task.status, startedAt: task.started_at, completedAt: task.completed_at, source: task.source || 'focuspilot', calendarEventId: task.calendar_event_id, scheduledStartAt: task.scheduled_start_at, scheduledEndAt: task.scheduled_end_at })).filter((task) => remoteJobsById.has(task.jobId));
   state.breaks = (remoteBreaks || []).map((item) => ({ id: item.id, type: item.break_type, minutes: item.planned_minutes, startedAt: item.started_at, endedAt: item.ended_at }));
   state.sessions = (remoteSessions || []).filter((item) => item.ended_at && item.actual_minutes).map((item) => ({ id: item.id, taskId: item.task_id, startedAt: item.started_at, endedAt: item.ended_at, plannedMinutes: item.planned_minutes, actualMinutes: item.actual_minutes, outcome: item.outcome }));
   save();
@@ -451,6 +491,7 @@ async function refreshSession() {
       try { await syncRemote(); } catch (error) { console.error(error); }
       const { data: connection } = await supabase.from('focus_calendar_connections').select('user_id').maybeSingle();
       googleCalendarConnected = Boolean(connection);
+      try { await rescheduleTodayTasks(); } catch (error) { console.error(error); }
       if (sessionStorage.getItem('focuspilot-google-link-pending')) {
         sessionStorage.removeItem('focuspilot-google-link-pending');
         const { data: identities } = await supabase.auth.getUserIdentities();
