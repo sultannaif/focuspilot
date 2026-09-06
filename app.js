@@ -72,7 +72,16 @@ function showError(error) {
 async function calendarFunction(body) {
   if (!currentSession) throw new Error('يجب تسجيل الدخول أولًا.');
   const { data, error } = await supabase.functions.invoke('google-calendar-sync', { body });
-  if (error) throw error;
+  if (error) {
+    let message = error.message || 'تعذرت مزامنة Google Calendar.';
+    if (error.context) {
+      try {
+        const details = await error.context.clone().json();
+        if (details?.error) message = details.error;
+      } catch (_) { /* Keep the SDK message when the response is not JSON. */ }
+    }
+    throw new Error(message);
+  }
   if (data?.ok === false) throw new Error(data.error || 'تعذرت مزامنة Google Calendar.');
   return data;
 }
