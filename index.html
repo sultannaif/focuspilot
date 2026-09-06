@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#111827" />
+    <title>FocusPilot | مدير الالتزام</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand"><span class="brand-mark">F</span><span>FocusPilot</span></div>
+        <p class="sidebar-caption">مدير التزامك الشخصي</p>
+        <nav class="nav">
+          <button class="nav-item active" data-view="today"><span>◷</span> يومي الآن</button>
+          <button class="nav-item" data-view="tasks"><span>✓</span> المهام</button>
+          <button class="nav-item" data-view="jobs"><span>◈</span> الوظائف</button>
+        </nav>
+        <div class="sidebar-note">
+          <span class="note-dot"></span>
+          <div><strong>قاعدة اليوم</strong><p>ابدأ بالأعلى قيمة، ولا تهرب لمهمة أسهل.</p></div>
+        </div>
+      </aside>
+
+      <main class="content">
+        <header class="topbar">
+          <div><span class="eyebrow">الأحد، ٦ سبتمبر ٢٠٢٦</span><h1>ركز على الشيء الذي يغيّر يومك</h1></div>
+          <div class="top-actions"><button class="ghost-button" id="calendarTop">ربط التقويم</button><button class="ghost-button" id="loginTop">تسجيل الدخول</button><button class="primary-button" id="addTaskTop">+ مهمة جديدة</button></div>
+        </header>
+
+        <section id="todayView" class="view">
+          <div class="hero-grid">
+            <article class="focus-card">
+              <div class="card-kicker"><span class="live-dot"></span> مهمتك الآن</div>
+              <div id="focusContent"></div>
+            </article>
+            <article class="score-card">
+              <div class="card-kicker">مؤشر الالتزام اليوم</div>
+              <div class="score-row"><strong id="scoreValue">--</strong><span>/ 100</span></div>
+              <div class="progress"><span id="scoreBar"></span></div>
+              <p id="scoreHint">أكمل أول مهمة حتى يبدأ التقييم.</p>
+            </article>
+          </div>
+
+          <div class="section-heading"><div><span class="eyebrow">الترتيب الذكي</span><h2>ما الذي يستحق وقتك الآن؟</h2></div><span class="availability">الوقت المتاح اليوم: ٤:٠٠ م - ١٢:٠٠ ص</span></div>
+          <div id="queue" class="task-queue"></div>
+        </section>
+
+        <section id="tasksView" class="view hidden"><div class="section-heading"><div><span class="eyebrow">كل ما عليك</span><h2>المهام</h2></div><button class="primary-button" id="addTaskList">+ إضافة مهمة</button></div><div id="allTasks" class="task-queue"></div></section>
+        <section id="jobsView" class="view hidden"><div class="section-heading"><div><span class="eyebrow">مصادر الالتزام</span><h2>الوظائف</h2></div><button class="primary-button" id="addJob">+ إضافة وظيفة</button></div><div id="jobsGrid" class="jobs-grid"></div></section>
+      </main>
+    </div>
+
+    <div id="taskModal" class="modal hidden"><div class="modal-panel"><button class="modal-close" data-close="taskModal">×</button><span class="eyebrow">إضافة إلى قائمة التنفيذ</span><h2>مهمة جديدة</h2><form id="taskForm"><label>اسم المهمة<input name="title" required placeholder="مثال: تجهيز تقرير الحملة" /></label><label>الوظيفة<select name="jobId" id="taskJobSelect" required></select></label><div class="form-grid"><label>المدة بالدقائق<input name="duration" type="number" min="10" value="60" required /></label><label>الموعد النهائي<input name="due" type="datetime-local" required /></label></div><label>أهمية المهمة<select name="importance"><option value="1">عادية</option><option value="1.25">مهمة</option><option value="1.5">حرجة</option></select></label><button class="primary-button full" type="submit">أضفها للترتيب الذكي</button></form></div></div>
+    <div id="jobModal" class="modal hidden"><div class="modal-panel"><button class="modal-close" data-close="jobModal">×</button><span class="eyebrow">مصدر جديد</span><h2>إضافة وظيفة</h2><form id="jobForm"><label>اسم الوظيفة<input name="name" required placeholder="مثال: تسويق شركة جديدة" /></label><label>الراتب الشهري<input name="salary" type="number" min="0" required placeholder="6500" /></label><label>لون التعريف<input name="color" type="color" value="#f97316" /></label><button class="primary-button full" type="submit">حفظ الوظيفة</button></form></div></div>
+    <div id="authModal" class="modal hidden"><div class="modal-panel"><button class="modal-close" data-close="authModal">×</button><span class="eyebrow">بياناتك محفوظة معك</span><h2>تسجيل الدخول</h2><form id="authForm"><label>البريد الإلكتروني<input name="email" type="email" required placeholder="you@example.com" /></label><label>كلمة المرور<input name="password" type="password" minlength="6" required /></label><div class="form-grid"><button class="primary-button" type="submit" data-auth-mode="signin">دخول</button><button class="small-button" type="button" id="signupButton">إنشاء حساب</button></div><p id="authMessage" class="form-message"></p></form></div></div>
+    <div id="calendarModal" class="modal hidden"><div class="modal-panel"><button class="modal-close" data-close="calendarModal">×</button><span class="eyebrow">الخطوة التالية</span><h2>Google Calendar</h2><p class="modal-copy">نجهز المزامنة لقراءة أحداث تقويمك وتحويلها إلى مهام. الربط المباشر يحتاج إعداد OAuth من Google، ويمكنك الآن استيراد ملف تقويم بصيغة ICS.</p><label class="file-import">استيراد ملف Google Calendar (.ics)<input id="icsInput" type="file" accept=".ics,text/calendar" /></label><p id="calendarMessage" class="form-message"></p></div></div>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
