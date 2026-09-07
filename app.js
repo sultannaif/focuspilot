@@ -23,11 +23,33 @@ let googleCalendarConnected = false;
 let authReady = false;
 let taskViewMode = 'list';
 let activeSession = JSON.parse(localStorage.getItem('focuspilot-active-session') || 'null');
+let pendingOperations = 0;
+let focusTimerHandle = null;
 const $ = (selector) => document.querySelector(selector);
 const save = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 const jobById = (id) => state.jobs.find((job) => job.id === id);
 const money = (value) => new Intl.NumberFormat('ar-SA').format(value);
 const minutes = (value) => value >= 60 ? `${Math.floor(value / 60)}س ${value % 60 ? `${value % 60}د` : ''}` : `${value}د`;
+function setLoading(label, active) {
+  pendingOperations = Math.max(0, pendingOperations + (active ? 1 : -1));
+  $('#loadingLabel').textContent = label;
+  $('#loadingOverlay').classList.toggle('hidden', pendingOperations === 0);
+}
+async function withLoading(label, work) {
+  setLoading(label, true);
+  try { return await work(); } finally { setLoading(label, false); }
+}
+function renderFocusOverlay() {
+  const task = activeSession && state.tasks.find((item) => item.id === activeSession.taskId);
+  const visible = Boolean(task && activeSession);
+  $('#focusOverlay').classList.toggle('hidden', !visible);
+  if (!visible) { if (focusTimerHandle) clearInterval(focusTimerHandle); focusTimerHandle = null; return; }
+  $('#focusTaskTitle').textContent = task.title;
+  $('#focusTaskMeta').textContent = `${jobById(task.jobId)?.name || 'بدون وظيفة'} · ${minutes(task.duration)} · بدأت ${new Date(activeSession.startedAt).toLocaleTimeString('ar-SA', { hour: 'numeric', minute: '2-digit' })}`;
+  const updateTimer = () => { const total = Math.max(0, Math.floor((Date.now() - new Date(activeSession.startedAt).getTime()) / 1000)); const hours = Math.floor(total / 3600); const mins = Math.floor((total % 3600) / 60); const secs = total % 60; $('#focusTimer').textContent = `${hours ? `${String(hours).padStart(2, '0')}:` : ''}${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`; };
+  updateTimer();
+  if (!focusTimerHandle) focusTimerHandle = setInterval(updateTimer, 1000);
+}
 
 function priorityScore(task) {
   const job = jobById(task.jobId) || { salary: 0, priority: 1 };
@@ -61,6 +83,7 @@ function render() {
   const todayBreaks = state.breaks.filter((item) => new Date(item.startedAt).toDateString() === today);
   $('#breaksList').innerHTML = todayBreaks.length ? todayBreaks.map((item) => `<div class="break-item"><strong>${breakLabels[item.type] || 'فترة خارج العمل'}</strong><span>${item.minutes} دقيقة · ${new Date(item.startedAt).toLocaleTimeString('ar-SA', { hour: 'numeric', minute: '2-digit' })}</span></div>`).join('') : '<div class="break-empty">لم تسجل أي راحة أو مشوار اليوم.</div>';
   renderAnalytics();
+  renderFocusOverlay();
 }
 
 function renderTasksCalendar() {
@@ -131,6 +154,7 @@ function showError(error) {
 
 async function calendarFunction(body) {
   if (!currentSession) throw new Error('يجب تسجيل الدخول أولًا.');
+  return withLoading('جارٍ مزامنة Google...', async () => {
   const { data, error } = await supabase.functions.invoke('google-calendar-sync', { body });
   if (error) {
     let message = error.message || 'تعذرت مزامنة Google Calendar.';
@@ -144,6 +168,7 @@ async function calendarFunction(body) {
   }
   if (data?.ok === false) throw new Error(data.error || 'تعذرت مزامنة Google Calendar.');
   return data;
+  });
 }
 
 function periodRange(period) {
@@ -256,7 +281,8 @@ async function startSession(task) {
   activeSession = session;
   localStorage.setItem('focuspilot-active-session', JSON.stringify(activeSession));
   task.status = 'in_progress'; task.startedAt = startedAt;
-  await updateRemoteTask(task, { status: 'in_progress', started_at: startedAt });
+  await withLoading('جارٍ بدء جلسة التركيز...', () => updateRemoteTask(task, { status: 'in_progress', started_at: startedAt }));
+  render();
 }
 
 async function stopSession(task, outcome = 'interrupted') {
@@ -264,12 +290,13 @@ async function stopSession(task, outcome = 'interrupted') {
   const endedAt = new Date().toISOString();
   const actualMinutes = Math.max(1, Math.round((new Date(endedAt) - new Date(activeSession.startedAt)) / 60000));
   if (currentSession && activeSession.id) {
-    const { error } = await supabase.from('focus_sessions').update({ ended_at: endedAt, actual_minutes: actualMinutes, outcome }).eq('id', activeSession.id);
+    const { error } = await withLoading('جارٍ حفظ وقت التركيز...', () => supabase.from('focus_sessions').update({ ended_at: endedAt, actual_minutes: actualMinutes, outcome }).eq('id', activeSession.id));
     if (error) throw error;
   }
   state.sessions.push({ id: activeSession.id || `session-${Date.now()}`, taskId: task.id, startedAt: activeSession.startedAt, endedAt, plannedMinutes: activeSession.plannedMinutes, actualMinutes, outcome });
   activeSession = null;
   localStorage.removeItem('focuspilot-active-session');
+  render();
 }
 
 async function deleteRemoteJob(jobId) {
@@ -292,6 +319,21 @@ async function deleteRemoteTask(task) {
 }
 
 document.addEventListener('click', async (event) => {
+  const focusAction = event.target.closest('[data-focus-action]');
+  if (focusAction && activeSession) {
+    const task = state.tasks.find((item) => item.id === activeSession.taskId);
+    if (!task) return;
+    try {
+      if (focusAction.dataset.focusAction === 'done') {
+        await stopSession(task, 'completed');
+        const completedAt = new Date().toISOString();
+        await updateRemoteTask(task, { status: 'done', completed_at: completedAt });
+        task.status = 'done'; task.completedAt = completedAt;
+      } else await stopSession(task, 'interrupted');
+      await rescheduleTodayTasks(); save(); render();
+    } catch (error) { showError(error); }
+    return;
+  }
   const nav = event.target.closest('[data-view]');
   if (nav) { document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item === nav)); document.querySelectorAll('.view').forEach((view) => view.classList.add('hidden')); $(`#${nav.dataset.view}View`).classList.remove('hidden'); }
   const action = event.target.closest('[data-action]');
@@ -340,7 +382,7 @@ $('#taskForm').onsubmit = async (event) => {
   event.preventDefault();
   const form = new FormData(event.target);
   const task = { title: form.get('title'), jobId: form.get('jobId'), duration: Number(form.get('duration')), due: form.get('due'), importance: Number(form.get('importance')), status: 'pending', startedAt: null, completedAt: null, source: 'focuspilot' };
-  try {
+  try { setLoading('جارٍ حفظ المهمة...', true);
     if (currentSession) {
       const { data, error } = await supabase.from('focus_tasks').insert({ job_id: task.jobId, title: task.title, duration_minutes: task.duration, due_at: task.due, importance: task.importance, status: task.status }).select().single();
       if (error) throw error;
@@ -354,11 +396,11 @@ $('#taskForm').onsubmit = async (event) => {
         await supabase.from('focus_tasks').update({ calendar_event_id: calendarResult.event_id }).eq('id', task.id);
       } catch (calendarError) {
         console.error(calendarError);
-        $('#calendarMessage').textContent = 'تم حفظ المهمة، لكن تعذرت إضافتها إلى Google Calendar.';
+        $('#calendarMessage').textContent = 'تم حفظ المهمة، لكن تعذرت إضافتها إلى Google Tasks. أعد ربط Google إذا لم توافق على صلاحية المهام.';
       }
     }
     await rescheduleTodayTasks();
-  } catch (error) { showError(error); }
+  } catch (error) { showError(error); } finally { setLoading('جارٍ حفظ المهمة...', false); }
 };
 $('#jobForm').onsubmit = async (event) => {
   event.preventDefault();
@@ -485,6 +527,7 @@ async function syncGoogleCalendar({ announce = true } = {}) {
 }
 
 async function refreshSession() {
+  setLoading('جارٍ تحميل منصتك...', true);
   try {
     const { data } = await supabase.auth.getSession();
     currentSession = data.session;
@@ -517,6 +560,7 @@ async function refreshSession() {
       }
     }
   } finally {
+    setLoading('جارٍ تحميل منصتك...', false);
     authReady = true;
     updateAccountButton();
   }

@@ -11,6 +11,8 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <div id="loadingOverlay" class="loading-overlay hidden" aria-live="polite" aria-busy="true"><div class="loading-card"><span class="loading-spinner"></span><strong id="loadingLabel">جارٍ التحميل...</strong><small>نعمل على تجهيز بياناتك</small></div></div>
+    <div id="focusOverlay" class="focus-overlay hidden"><div class="focus-shell"><div class="focus-orbit focus-orbit-one"></div><div class="focus-orbit focus-orbit-two"></div><div class="focus-inner"><span class="eyebrow">جلسة تركيز</span><span class="focus-status"><i></i> أنت في المكان الصحيح</span><h2 id="focusTaskTitle">مهمتك الآن</h2><p id="focusTaskMeta" class="focus-task-meta"></p><div class="focus-timer" id="focusTimer">00:00</div><p class="focus-encouragement">خطوة واحدة الآن تكفي. لا تبحث عن المزاج، ابدأ وسيأتيك.</p><div class="focus-overlay-actions"><button class="primary-button" data-focus-action="done">أنجزت المهمة</button><button class="small-button secondary" data-focus-action="stop">إيقاف الجلسة مؤقتًا</button></div></div></div></div>
     <section id="authGate" class="auth-gate">
       <div class="auth-gate-mark">F</div>
       <span class="eyebrow">FocusPilot</span>
