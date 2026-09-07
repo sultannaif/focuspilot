@@ -98,7 +98,7 @@ function scheduleStartForToday() {
 async function rescheduleTodayTasks({ forceCalendar = false } = {}) {
   if (!currentSession) return;
   const today = new Date().toDateString();
-  const tasks = orderedTasks().filter((task) => new Date(task.due).toDateString() === today && task.status !== 'done' && task.source !== 'google_calendar');
+  const tasks = orderedTasks().filter((task) => new Date(task.due).toDateString() === today && task.status !== 'done' && !['google_calendar', 'google_tasks'].includes(task.source));
   if (!tasks.length) return;
   let cursor = scheduleStartForToday();
   const updates = tasks.map((task, index) => {
@@ -453,13 +453,13 @@ async function connectGoogleCalendar() {
       return;
     }
   }
-  $('#calendarMessage').textContent = 'سيتم فتح Google للموافقة على قراءة وكتابة أحداث التقويم...';
+  $('#calendarMessage').textContent = 'سيتم فتح Google للموافقة على قراءة التقويم وكتابة المهام...';
   sessionStorage.setItem('focuspilot-google-link-pending', '1');
   const { error } = await supabase.auth.linkIdentity({
     provider: 'google',
     options: {
       redirectTo: window.location.origin,
-      scopes: 'https://www.googleapis.com/auth/calendar.events',
+      scopes: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks',
       queryParams: { access_type: 'offline', prompt: 'consent' }
     }
   });
@@ -476,7 +476,7 @@ async function syncGoogleCalendar({ announce = true } = {}) {
     const result = await calendarFunction({ action: 'sync' });
     googleCalendarConnected = true;
     await syncRemote();
-    if (announce) $('#calendarMessage').textContent = `تمت المزامنة. تمت قراءة ${result.imported || 0} حدث جديد.`;
+    if (announce) $('#calendarMessage').textContent = `تمت المزامنة. تمت قراءة ${result.imported || 0} عنصر جديد.`;
   } catch (error) {
     console.error(error);
     googleCalendarConnected = false;
